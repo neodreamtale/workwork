@@ -1,0 +1,28 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Step {
+  id           String   @id @default(ulid())
+  name         String?
+  previous     String?
+  next         String?
+  chainId      String
+  chainPos     Int
+  parentId     String?
+  parent       Step?    @relation("include", fields: [parentId], references: [id])
+  includeSteps Step[]   @relation("include")
+  payload      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([chainId, chainPos])
+  @@index([parentId])
+  @@index([chainId])
+}

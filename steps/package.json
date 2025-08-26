@@ -1,0 +1,16 @@
+{
+  "name": "steps",
+  "version": "1.0.0",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "license": "MIT",
+  "dependencies": {
+    "@prisma/client": "^6.9.0"
+  },
+  "devDependencies": {
+    "prisma": "^6.9.0"
+  },
+  "scripts": {
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma"
+  }
+}
