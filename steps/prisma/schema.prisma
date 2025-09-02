@@ -31,6 +31,7 @@ model Step {
 model Chain {
   id        String   @id @default(ulid())
   name      String?
+  nowStepId String?
   chainPos  Int
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
