@@ -13,26 +13,28 @@ model Step {
   name             String?
   previous         String?
   next             String?
-  chainId          String
-  chainPos         Int
-  parentId         String?
+  chain            Chain    @relation(fields: [chainId], references: [id])
+  chainId          String   @default("")
   parent           Step?    @relation("include", fields: [parentId], references: [id])
+  parentId         String   @default("")
   includeSteps     Step[]   @relation("include")
   currentStepIndex Int?
   payload          Json?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  @@unique([chainId, chainPos])
+  @@unique([chainId, parentId])
   @@index([parentId])
   @@index([chainId])
 }
 
 model Chain {
-  id        String   @id @default(ulid())
-  name      String?
-  nowStepId String?
-  chainPos  Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(ulid())
+  name        String?
+  nowStepId   String?
+  chainPos    Int
+  chainLength Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  steps       Step[]
 }
