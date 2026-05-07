@@ -5,36 +5,118 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// 1. 模板层 (Template / Blueprint)
+// 只存结构和定义，绝对不混入用户运行产生的数据
+// ==========================================
+
+model Chain {
+  id          String  @id @default(ulid())
+  name        String?
+  description String?
+  chainLength Int     @default(0)
+
+  steps     Step[]
+  instances ChainInstance[]
+  
+  // 反向关联：这个模板被哪些步骤作为“子流程”引用了
+  calledBySteps Step[] @relation("StepToSubChainTemplate")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Step {
-  id               String   @id @default(ulid())
-  name             String?
-  previous         String?
-  next             String?
-  chain            Chain    @relation(fields: [chainId], references: [id])
-  chainId          String   @default("")
-  parent           Step?    @relation("include", fields: [parentId], references: [id])
-  parentId         String   @default("")
-  includeSteps     Step[]   @relation("include")
-  currentStepIndex Int?
-  payload          Json?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id   String  @id @default(ulid())
+  name String?
 
-  @@unique([chainId, parentId])
+  // 流程结构：上下级指针
+  previousId String?
+  nextId     String?
+
+  // 归属的 Chain
+  chainId String
+  chain   Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  // 嵌套子步骤关系
+  parentId     String?
+  parent       Step?   @relation("include", fields: [parentId], references: [id], onDelete: Cascade)
+  includeSteps Step[]  @relation("include")
+  
+  // 引用子流程关系 (如果这个步骤是要调起另一个工作流模板)
+  subChainId   String?
+  subChain     Chain?  @relation("StepToSubChainTemplate", fields: [subChainId], references: [id])
+
+  // 该步骤的初始配置（比如表单长什么样），注意这不是用户填写的数据
+  defaultPayload Json?
+
+  instances StepInstance[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   @@index([parentId])
   @@index([chainId])
 }
 
-model Chain {
-  id          String   @id @default(ulid())
-  name        String?
-  nowStepId   String?
-  chainPos    Int
-  chainLength Int
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  steps       Step[]
+// ==========================================
+// 2. 实例层 (Instance / Execution)
+// 专门用来存用户发起的工作流产生的数据和实时状态
+// ==========================================
+
+model ChainInstance {
+  id String @id @default(ulid())
+
+  // 它是根据哪个模板创建的
+  chainId String
+  chain   Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  // 运行状态：PENDING(待触发), RUNNING(进行中), PAUSED(挂起), COMPLETED(完成), FAILED(失败), CANCELLED(取消)
+  status    String  @default("PENDING")
+  nowStepId String? // 当前跑到哪一步了 (指向 Step 的 ID)
+
+  // 整个流程运行期间产生的全局数据
+  globalPayload Json?
+
+  stepInstances StepInstance[]
+  
+  // 如果这是一个子流程实例，它是被哪个父步骤实例调起的？
+  parentStepInstances StepInstance[] @relation("StepToSubChainInstance")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chainId])
+  @@index([status])
+}
+
+model StepInstance {
+  id String @id @default(ulid())
+
+  // 归属的工作流实例
+  chainInstanceId String
+  chainInstance   ChainInstance @relation(fields: [chainInstanceId], references: [id], onDelete: Cascade)
+
+  // 对应的是模板中的哪一个步骤
+  stepId String
+  step   Step   @relation(fields: [stepId], references: [id])
+  
+  // 如果这个步骤运行时派生出了一个子流程，记录这个子流程实例的ID
+  subChainInstanceId String?
+  subChainInstance   ChainInstance? @relation("StepToSubChainInstance", fields: [subChainInstanceId], references: [id])
+
+  // 该步骤的执行状态：PENDING(未开始), READY(待认领), RUNNING(处理中), COMPLETED(完成), FAILED(异常), SKIPPED(跳过)
+  status String @default("PENDING")
+
+  // 用户在这一步真正填写产生的数据
+  payload Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([chainInstanceId])
+  @@index([stepId])
+  @@index([status])
 }

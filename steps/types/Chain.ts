@@ -1,67 +1,175 @@
-import { Step } from './Step';
-import { Chain as PrismaChain } from '../generated/client';
+import Step from './Step';
 import { StepResult } from './StepResult';
-import prisma from '../../lib/db';
+import prisma from '../lib/db';
+import { Chain as ChainTemplate, ChainInstance } from '../generated/client';
 
-export class Chain<T = any> implements Partial<PrismaChain> {
-    id?: string;
-    name?: string | null;
-    nowStepId?: string | null;
-    chainPos?: number;
-    createdAt?: Date;
-    updatedAt?: Date;
+export default class Chain<T = any> {
+    // 强制分离：内部只维护这两个 Prisma 对象
+    template: ChainTemplate;
+    instance?: ChainInstance;
 
-    steps?: Step<T>[] = [];
+    steps: Step<T>[] = [];
     private idMap: Record<string, Step<T>> = {};
-    lastId?: string | null = null;
+    private tail?: Step<T>;
     result?: StepResult<any>;
-    finished: boolean = false;
-    private listener: Record<string, (step: Step<T>, chain: Chain<T>) => void> = {};
 
-    constructor(id?: string) {
-        if (id) this.id = id;
-        this.steps = [];
-        this.buildChain();
+    constructor(template?: Partial<ChainTemplate>, instance?: ChainInstance, autoBuild: boolean = true) {
+        this.template = {
+            id: template?.id ?? crypto.randomUUID(),
+            name: template?.name ?? null,
+            description: template?.description ?? null,
+            chainLength: template?.chainLength ?? 0,
+            createdAt: template?.createdAt ?? new Date(),
+            updatedAt: template?.updatedAt ?? new Date(),
+        };
+        if (instance) {
+            this.instance = instance;
+        }
+        this.idMap = {};
+        if (autoBuild) this.buildChain();
     }
 
-    static async loadById<U = any>(id: string, withSteps = false): Promise<Chain<U> | null> {
-        const chain = await prisma.chain.findUnique({
+    /**
+     * 根据模板 ID 加载一个工作流蓝图
+     */
+    static async loadTemplate<U = any>(id: string, withSteps = false): Promise<Chain<U>> {
+        const chainData = await prisma.chain.findUnique({
             where: { id },
             include: withSteps ? { steps: true } : undefined,
         });
-        if (!chain) return null;
-        const c = new Chain<U>(chain.id);
-        c.name = chain.name ?? undefined;
-        c.chainPos = chain.chainPos ?? undefined;
-        c.nowStepId = chain.nowStepId ?? null;
-        c.steps = withSteps ? chain.steps : [];
+        
+        console.info('Loaded chain template:', chainData?.id);
+        if (chainData) {
+            const { steps, ...templateProps } = chainData;
+            const c = new Chain<U>(templateProps);
+            
+            if (withSteps && steps) {
+                c.steps = steps.map((s: any) => new Step<U>(s));
+            }
+            c.buildChain();
+            return c;
+        } else {
+            return new Chain<U>({ id });
+        }
+    }
+
+    /**
+     * 加载一个真正运行中的工作流实例
+     */
+    static async loadInstance<U = any>(instanceId: string): Promise<Chain<U>> {
+        const instanceData = await prisma.chainInstance.findUnique({
+            where: { id: instanceId },
+            include: { chain: { include: { steps: true } } }
+        });
+        if (!instanceData) throw new Error(`找不到 ID 为 ${instanceId} 的运行实例`);
+
+        const { chain, ...instanceProps } = instanceData;
+        const { steps, ...templateProps } = chain;
+        
+        const c = new Chain<U>(templateProps, instanceProps);
+        if (steps) {
+            c.steps = steps.map((s: any) => new Step<U>(s));
+        }
         c.buildChain();
         return c;
     }
 
-    buildChain() {
+    modifyName(name: string): Chain<T> {
+        this.template.name = name;
+        return this;
+    }
+
+    async progressWithId(nowStepId: string): Promise<Chain<T>> {
+        if (!this.instance) {
+            throw new Error("当前操作的是一个工作流模板！你需要先为它创建一个运行实例 (ChainInstance) 才能执行进度操作。");
+        }
+        
+        this.instance.nowStepId = nowStepId;
+        await prisma.chainInstance.update({
+            where: { id: this.instance.id },
+            data: { nowStepId }
+        });
+        return this;
+    }
+
+    buildChain(): Chain<T> {
         this.idMap = {};
-        for (const s of this.steps ?? []) {
-            if ((s as Step).includeSteps) delete (s as Step).includeSteps;
+        for (const s of this.steps) {
+            if (s.includeSteps) delete s.includeSteps;
         }
-        for (const s of this.steps ?? []) {
-            const id = (s as any).id;
-            if (id) this.idMap[id] = s as Step<T>;
+        for (const s of this.steps) {
+            if (s.template.id) this.idMap[s.template.id] = s;
         }
-        for (const s of this.steps ?? []) {
-            const parentId = (s as Step).parentId as string | undefined | null;
+        for (const s of this.steps) {
+            const parentId = s.template.parentId;
             if (parentId) {
-                const parent = this.idMap[parentId] ?? this.steps?.find(x => (x as any).id === parentId);
+                const parent = this.idMap[parentId] ?? this.steps.find(x => x.template.id === parentId);
                 if (parent) {
                     parent.includeSteps = parent.includeSteps ?? [];
-                    if (!parent.includeSteps.find((x) => (x as Step).id === (s as Step).id)) {
-                        parent.includeSteps.push(s as Step);
+                    if (!parent.includeSteps.find((x) => x.template.id === s.template.id)) {
+                        parent.includeSteps.push(s);
                     }
                 }
             }
         }
-        let tempId = this.steps[0].id;
-        while (tempId)
+        
+        // 查找尾节点
+        let tempId: string | null | undefined = this.steps[0]?.template.id; 
+        while (tempId) {
+            const step: Step<T> | undefined = this.idMap[tempId as string];
+            if (!step) break;
+            tempId = step.template.nextId;
+            if (!step.template.nextId) {
+                this.tail = step;
+            }
+        }
+        
+        try {
+            this.persistIndexToDb();
+        } catch (e) {}
+
+        return this;
+    }
+
+    private async persistIndexToDb(): Promise<void> {
+        try {
+            await prisma.chain.upsert({
+                where: { id: this.template.id },
+                create: this.template,
+                update: this.template
+            });
+
+            const remaining = Array.from(this.steps);
+            const created = new Set<string>();
+            const maxPass = remaining.length + 2;
+            let pass = 0;
+            
+            while (remaining.length && pass < maxPass) {
+                pass++;
+                let progressed = false;
+                for (let i = 0; i < remaining.length; i++) {
+                    const s = remaining[i];
+                    const id = s.template.id;
+                    const pid = s.template.parentId;
+                    
+                    if (!pid || created.has(pid) || !this.idMap[pid]) {
+                        s.template.chainId = this.template.id;
+                        await prisma.step.upsert({ 
+                            where: { id }, 
+                            create: s.template, 
+                            update: s.template 
+                        });
+                        created.add(id);
+                        remaining.splice(i, 1);
+                        progressed = true;
+                        i--;
+                    }
+                }
+                if (!progressed) break;
+            }
+        } catch (err: any) {
+            console.error('Prisma persist error');
+        }
     }
 
     getById(id?: string | null) {
@@ -69,142 +177,68 @@ export class Chain<T = any> implements Partial<PrismaChain> {
         return this.idMap[id];
     }
 
-
-    newStep(step: Step<T>, target: string | null, pos: "before" | "after" | "end" = "end") {
-        this.steps = this.steps ?? [];
-        const sid = (step as Step).id ?? null;
-        if (step.parentId) {
-            const parent = this.idMap[step.parentId];
+    newStep(step: Step<T>, target: string | null, pos: "before" | "after" | "end" = "end"): Chain<T> {
+        const sid = step.template.id;
+        if (step.template.parentId) {
+            const parent = this.idMap[step.template.parentId];
             if (!parent) {
-                throw new Error(`无法找到相关父节点:${step.parentId}，无法添加子节点`,);
+                throw new Error(`无法找到相关父节点:${step.template.parentId}，无法添加子节点`);
             }
             parent.includeSteps = parent.includeSteps ?? [];
             parent.includeSteps.push(step);
             if (sid) this.idMap[sid] = step;
-            if (this.id) (step as Step<T>).chainId = this.id;
+            step.template.chainId = this.template.id;
         } else {
-            // 无 parentId：在主集合中按 target/pos 插入，并更新 previous/next 链接
             if (target && this.idMap[target]) {
-                const targetStep = this.idMap[target] as Step<T>;
+                const targetStep = this.idMap[target];
                 if (pos === 'before') {
-                    const oldP = targetStep.previous ?? null;
-                    step.next = targetStep.id;
-                    step.previous = oldP;
-                    // 更新原 prev 的 next 指向新 step
+                    const oldP = targetStep.template.previousId;
+                    step.template.nextId = targetStep.template.id;
+                    step.template.previousId = oldP;
                     if (oldP && this.idMap[oldP]) {
-                        (this.idMap[oldP] as Step<T>).next = sid;
+                        this.idMap[oldP].template.nextId = sid;
                     }
-                    targetStep.previous = sid;
+                    targetStep.template.previousId = sid;
                 } else if (pos === 'after') {
-                    const oldN = targetStep.next ?? null;
-                    step.previous = targetStep.id;
-                    step.next = oldN;
+                    const oldN = targetStep.template.nextId;
+                    step.template.previousId = targetStep.template.id;
+                    step.template.nextId = oldN;
                     if (oldN && this.idMap[oldN]) {
-                        (this.idMap[oldN] as Step<T>).previous = sid;
+                        this.idMap[oldN].template.previousId = sid;
                     }
-                    targetStep.next = sid;
-                } else {
-                    const last = this.steps[this.steps.length - 1];
-                    (step as any).previous = last ? (last as any).id ?? null : null;
-                    (step as any).next = null;
-                    if (last) (last as any).next = sid;
+                    targetStep.template.nextId = sid;
+                } else if (pos === 'end' && this.tail) {
+                    const last = this.idMap[this.tail.template.id];
+                    last.template.nextId = sid;
+                    step.template.previousId = this.tail.template.id;
+                    this.tail = step;
                 }
-
-                // 确保在 steps 集合与 idMap 中登记
-                if (!this.steps.find(s => (s as any).id === sid)) this.steps.push(step);
-                if (sid) this.idMap[sid] = step;
-                if (this.id) (step as any).chainId = this.id;
-                return;
+            } else {
+                this.steps.push(step);
             }
-
-            // target 不存在或未提供：把 step 作为集合末尾追加
-            this.steps.push(step);
-            if (sid) this.idMap[sid] = step;
-            if (this.id) (step as any).chainId = this.id;
         }
+        if (sid) this.idMap[sid] = step;
+        return this;
     }
 
     removeById(id: string) {
-        this.steps = (this.steps ?? []).filter(s => (s as any).id !== id);
+        this.steps = this.steps.filter(s => s.template.id !== id);
         delete this.idMap[id];
-        for (const parent of this.steps ?? []) {
+        for (const parent of this.steps) {
             if (parent && parent.includeSteps) {
-                parent.includeSteps = parent.includeSteps.filter((c) => (c as any).id !== id);
+                parent.includeSteps = parent.includeSteps.filter(c => c.template.id !== id);
                 if (parent.includeSteps.length === 0) delete parent.includeSteps;
             }
         }
     }
 
-    // readonly view
     get index() {
         return this.idMap as Readonly<Record<string, Step<T>>>;
     }
 
-    stepForward() {
-        if (!this.steps || this.steps.length === 0) return;
-        if (!this.nowStepId) {
-            const first = this.steps[0];
-            this.nowStepId = (first as any).id ?? null;
-        }
-        const step = this.getById(this.nowStepId ?? undefined);
-        if (!step) return;
-        if (step.includeSteps && Array.isArray(step.includeSteps)) {
-            for (const sub of step.includeSteps) {
-                sub.result = sub.exec(sub.payload);
-                // emit step event for sub-step
-                if (!sub.result.success) {
-                    this.result = sub.result;
-                    // emit progress (failed)
-                    return;
-                }
-            }
-        }
-
-        step.result = step.exec(step.payload);
-        if (!step.result.success) {
-            this.result = step.result;
-            return;
-        }
-        const hasNext = !!((step as Step).next);
-        const hasInclude = !!(step.includeSteps && step.includeSteps.length > 0);
-        if (!hasNext && !hasInclude) {
-            this.finished = true;
-            this.nowStepId = null;
-        } else {
-            this.nowStepId = (step as Step).next ?? null;
-        }
-        // emit progress after advancing
-    }
-
-    // compute progress as index / length (0..1). if step not found returns 0.
-    private _computeProgress(step: Step<T>): number {
-        if (!this.steps || this.steps.length === 0) return 0;
-        const idx = this.steps.findIndex(s => (s as any).id === (step as any).id);
-        if (idx < 0) return 0;
-        return (idx + 1) / this.steps.length;
-    }
-
     async create() {
-        const data: any = {
-            name: this.name ?? undefined,
-            nowStepId: this.nowStepId ?? undefined,
-            chainPos: this.chainPos ?? 0,
-        };
-
-        const created = await prisma.chain.create({ data });
-        this.id = created.id;
+        const created = await prisma.chain.create({ data: this.template });
+        this.template.id = created.id;
         return created;
     }
-
-    isFinished(): boolean {
-        if (this.finished) return true;
-        if (!this.steps || this.steps.length === 0) return true;
-        if (!this.nowStepId) return true;
-        const step = this.getById(this.nowStepId ?? undefined);
-        if (!step) return true;
-        const hasNext = !!((step as any).next);
-        const hasInclude = !!(step.includeSteps && step.includeSteps.length > 0);
-        return !hasNext && !hasInclude;
-    }
 }
-
