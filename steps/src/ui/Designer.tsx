@@ -17,7 +17,11 @@ export function WorkflowDesigner({ chainId = "CHAIN_TEST_001" }: DesignerProps) 
 
     useEffect(() => {
         // 组件加载时获取数据
-        fetchChainAction(chainId).then(data => setChain(data));
+        fetchChainAction(chainId).then(data => {
+            console.log("🔍 后端返回的数据长这样：", data);
+            debugger; // 代码会在这里停住，你可以去浏览器控制台慢慢看
+            setChain(data);
+        });
     }, [chainId]);
 
     const handleDragStart = (e: React.DragEvent, index: number) => {

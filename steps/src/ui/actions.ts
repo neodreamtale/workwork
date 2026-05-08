@@ -17,44 +17,21 @@ export async function fetchChainAction(id: string) {
         const s2 = new Step({ id: "STEP_2", name: "松土施底肥" });
         const s3 = new Step({ id: "STEP_3", name: "播种与浇水" });
         const s4 = new Step({ id: "STEP_4", name: "秋季收割" });
-        dummyChain.newStep(s1, null).newStep(s2, "STEP_1").newStep(s3, "STEP_2").newStep(s4, "STEP_3");
-        
+        dummyChain.newStep(s1).newStep(s2).newStep(s3).newStep(s4);
+
         return JSON.parse(JSON.stringify(dummyChain));
     }
 }
 
 export async function saveChainAction(data: any) {
-    // 1. 根据传入的 plain object 重建内存实体
-    const chain = new Chain({ 
-        id: data.template.id, 
-        name: data.template.name, 
-        description: data.template.description 
-    });
-    
-    // 2. 根据前端排好的数组顺序，重构链表指针
+    // 1. 根据前端传回的 DTO 重新构造内存中的 Chain 实体
+    const chain = new Chain(data.template);
+    // 2. 将步骤 DTO 转换为 Step 实体
     const stepsData = data.steps || [];
-    let prevId = null;
-    for (let i = 0; i < stepsData.length; i++) {
-        const sd = stepsData[i];
-        const step = new Step({ 
-            id: sd.template.id, 
-            name: sd.template.name, 
-            subChainId: sd.template.subChainId 
-        });
-        
-        step.template.previousId = prevId;
-        if (i < stepsData.length - 1) {
-            step.template.nextId = stepsData[i+1].template.id;
-        } else {
-            step.template.nextId = null; // 尾节点
-        }
-        
-        chain.steps.push(step);
-        prevId = step.template.id;
-    }
+    chain.steps = stepsData.map((sd: any) => new Step(sd.template));
+    // 3. 核心：利用我们重写后的 buildChain() 直接同步数组顺序到 sortOrder
     chain.buildChain();
-    
-    // 3. 落库
+    // 4. 直接持久化
     await Blueprint.save(chain);
     return { success: true };
 }

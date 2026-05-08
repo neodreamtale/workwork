@@ -9,8 +9,7 @@ export default class Step<T = any> {
         this.template = {
             id: template?.id ?? crypto.randomUUID(),
             name: template?.name ?? null,
-            previousId: template?.previousId ?? null,
-            nextId: template?.nextId ?? null,
+            sortOrder: template?.sortOrder ?? 0,
             chainId: template?.chainId ?? '',
             subChainId: template?.subChainId ?? null,
             createdAt: template?.createdAt ?? new Date(),

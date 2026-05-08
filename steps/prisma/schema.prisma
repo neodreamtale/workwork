@@ -50,12 +50,9 @@ model ChainInstance {
 }
 
 model Step {
-  id   String  @id @default(ulid())
-  name String?
-
-  // 流程结构：上下级指针
-  previousId String?
-  nextId     String?
+  id        String  @id @default(ulid())
+  name      String?
+  sortOrder Int     @default(0) // 排序序号
 
   // 归属的 Chain
   chainId String
@@ -71,11 +68,13 @@ model Step {
   updatedAt DateTime @updatedAt
 
   @@index([chainId])
+  @@index([sortOrder])
 }
 
 model StepInstance {
-  id     String @id @default(ulid())
-  // 对应的是模板中的哪一个步骤
+  id        String @id @default(ulid())
+  sortOrder Int    @default(0) // 快照当时的序号
+
   stepId String
   step   Step   @relation(fields: [stepId], references: [id])
 
@@ -97,4 +96,5 @@ model StepInstance {
 
   @@index([chainInstanceId])
   @@index([stepId])
+  @@index([sortOrder])
 }

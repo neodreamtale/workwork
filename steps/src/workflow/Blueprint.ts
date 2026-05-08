@@ -33,13 +33,13 @@ export class Blueprint {
                     const subC = new Chain<U>(subChain);
                     if (subChain.steps) {
                         subC.steps = subChain.steps.map((ss: any) => new Step<U>(ss));
-                        subC.buildChain();
+                        subC.buildChain(true);
                     }
                     step.subChain = subC;
                 }
                 return step;
             });
-            c.buildChain();
+            c.buildChain(true);
         }
         return c;
     }

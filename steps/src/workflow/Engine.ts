@@ -131,6 +131,7 @@ export class WorkflowEngine {
                     stepId: step.template.id,
                     chainInstanceId: chainInstanceId,
                     status: "RUNNING",
+                    sortOrder: step.template.sortOrder // 记录执行时的快照序号
                 }
             });
         } else {
@@ -152,7 +153,12 @@ export class WorkflowEngine {
 
         if (!stepInstance) {
             stepInstance = await prisma.stepInstance.create({
-                data: { stepId: step.template.id, chainInstanceId, status: "RUNNING" }
+                data: { 
+                    stepId: step.template.id, 
+                    chainInstanceId, 
+                    status: "RUNNING",
+                    sortOrder: step.template.sortOrder
+                }
             });
         }
 
@@ -173,14 +179,21 @@ export class WorkflowEngine {
      */
     private static findRunnableSteps(chainTemplate: Chain<any>, existingInstances: any[]): Step<any>[] {
         const runnable: Step<any>[] = [];
-        for (const step of chainTemplate.steps) {
-            const instance = existingInstances.find(i => i.stepId === step.template.id);
+        for (let i = 0; i < chainTemplate.steps.length; i++) {
+            const step = chainTemplate.steps[i];
+            const instance = existingInstances.find(si => si.stepId === step.template.id);
+            
+            // 已完成或运行中的节点，不再重复触发
             if (instance?.status === 'COMPLETED' || instance?.status === 'RUNNING') continue;
 
-            if (!step.template.previousId) {
+            // 亮起逻辑：
+            // 1. 如果是数组第一个节点 (i === 0)，直接亮起
+            // 2. 如果前一个节点 (i - 1) 的实例状态已经是 COMPLETED，则亮起当前节点
+            if (i === 0) {
                 runnable.push(step);
             } else {
-                const prevInstance = existingInstances.find(i => i.stepId === step.template.previousId);
+                const prevStep = chainTemplate.steps[i - 1];
+                const prevInstance = existingInstances.find(si => si.stepId === prevStep.template.id);
                 if (prevInstance?.status === 'COMPLETED') {
                     runnable.push(step);
                 }
