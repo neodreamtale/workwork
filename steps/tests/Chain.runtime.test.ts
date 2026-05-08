@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
-import Chain from '../types/Chain';
-import Step from '../types/Step';
+import Chain from '../src/types/Chain';
+import Step from '../src/types/Step';
 import { assert } from 'console';
 
 

@@ -1,6 +1,6 @@
 import { PrismaClient } from '../generated/client';
-import Chain from '../types/Chain';
-import Step from '../types/Step';
+import Chain from '../src/types/Chain';
+import Step from '../src/types/Step';
 
 const prisma = new PrismaClient({});
 

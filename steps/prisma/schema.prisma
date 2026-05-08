@@ -1,7 +1,6 @@
 generator client {
-  provider   = "prisma-client-js"
-  output     = "../generated/client"
-  engineType = "library"
+  provider = "prisma-client-js"
+  output   = "../generated/client"
 }
 
 datasource db {
@@ -32,17 +31,19 @@ model ChainInstance {
   chain      Chain  @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   // 运行状态：PENDING(待触发), RUNNING(进行中), PAUSED(挂起), COMPLETED(完成), FAILED(失败), CANCELLED(取消)
-  status    String  @default("PENDING")
-  nowStepId String? // 当前跑到哪一步了 (指向 Step 的 ID)
-
+  status       String @default("PENDING")
   // 整个流程运行期间产生的全局数据
-  chainPayload  Json?
-  stepInstances StepInstance[]
+  chainPayload Json?
 
-  // 如果这是一个子流程实例，它是被哪个父步骤实例调起的？
-  parentStepInstances StepInstance[] @relation("ParentStep")
-  createdAt           DateTime       @default(now())
-  updatedAt           DateTime       @updatedAt
+  // 该工作流包含的所有节点实例
+  stepInstances StepInstance[] @relation("ChainToStep")
+
+  // 【新增：双向指针】如果这是个子流程实例，它是由哪个父节点实例派生出来的
+  parentStepInstanceId String?
+  parentStepInstance   StepInstance? @relation("SubChainRelation", fields: [parentStepInstanceId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([templateId])
   @@index([status])
@@ -80,16 +81,15 @@ model StepInstance {
 
   // 归属的工作流实例
   chainInstanceId String
-  chainInstance   ChainInstance @relation(fields: [chainInstanceId], references: [id], onDelete: Cascade)
+  chainInstance   ChainInstance @relation("ChainToStep", fields: [chainInstanceId], references: [id], onDelete: Cascade)
 
-  // 如果这个步骤运行时派生出了一个子流程，记录这个子流程实例的ID
-  subChainInstanceId String?
-  subChainInstance   ChainInstance? @relation("ParentStep", fields: [subChainInstanceId], references: [id])
+  // 【新增：双向指针的反向关系】作为父节点，派生出的子流程实例们
+  childChainInstances ChainInstance[] @relation("SubChainRelation")
 
   // 该步骤的执行状态：PENDING(未开始), READY(待认领), RUNNING(处理中), COMPLETED(完成), FAILED(异常), SKIPPED(跳过)
   status String @default("PENDING")
 
-  // 用户在这一步真正填写产生的数据
+  // 业务数据
   payload Json?
 
   createdAt DateTime @default(now())
@@ -97,5 +97,4 @@ model StepInstance {
 
   @@index([chainInstanceId])
   @@index([stepId])
-  @@index([status])
 }
