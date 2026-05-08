@@ -1,16 +1,12 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../generated/client"
+  provider   = "prisma-client-js"
+  output     = "../generated/client"
+  engineType = "library"
 }
 
 datasource db {
   provider = "sqlite"
 }
-
-// ==========================================
-// 1. 模板层 (Template / Blueprint)
-// 只存结构和定义，绝对不混入用户运行产生的数据
-// ==========================================
 
 model Chain {
   id          String  @id @default(ulid())
@@ -20,12 +16,36 @@ model Chain {
 
   steps     Step[]
   instances ChainInstance[]
-  
+
   // 反向关联：这个模板被哪些步骤作为“子流程”引用了
-  calledBySteps Step[] @relation("StepToSubChainTemplate")
+  usedBySteps Step[] @relation("childChain")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model ChainInstance {
+  id String @id @default(ulid())
+
+  // 它是根据哪个模板创建的
+  templateId String
+  chain      Chain  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  // 运行状态：PENDING(待触发), RUNNING(进行中), PAUSED(挂起), COMPLETED(完成), FAILED(失败), CANCELLED(取消)
+  status    String  @default("PENDING")
+  nowStepId String? // 当前跑到哪一步了 (指向 Step 的 ID)
+
+  // 整个流程运行期间产生的全局数据
+  chainPayload  Json?
+  stepInstances StepInstance[]
+
+  // 如果这是一个子流程实例，它是被哪个父步骤实例调起的？
+  parentStepInstances StepInstance[] @relation("ParentStep")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@index([templateId])
+  @@index([status])
 }
 
 model Step {
@@ -40,72 +60,31 @@ model Step {
   chainId String
   chain   Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
 
-  // 嵌套子步骤关系
-  parentId     String?
-  parent       Step?   @relation("include", fields: [parentId], references: [id], onDelete: Cascade)
-  includeSteps Step[]  @relation("include")
-  
   // 引用子流程关系 (如果这个步骤是要调起另一个工作流模板)
-  subChainId   String?
-  subChain     Chain?  @relation("StepToSubChainTemplate", fields: [subChainId], references: [id])
-
-  // 该步骤的初始配置（比如表单长什么样），注意这不是用户填写的数据
-  defaultPayload Json?
+  subChainId String?
+  subChain   Chain?  @relation("childChain", fields: [subChainId], references: [id])
 
   instances StepInstance[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([parentId])
   @@index([chainId])
-}
-
-// ==========================================
-// 2. 实例层 (Instance / Execution)
-// 专门用来存用户发起的工作流产生的数据和实时状态
-// ==========================================
-
-model ChainInstance {
-  id String @id @default(ulid())
-
-  // 它是根据哪个模板创建的
-  chainId String
-  chain   Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
-
-  // 运行状态：PENDING(待触发), RUNNING(进行中), PAUSED(挂起), COMPLETED(完成), FAILED(失败), CANCELLED(取消)
-  status    String  @default("PENDING")
-  nowStepId String? // 当前跑到哪一步了 (指向 Step 的 ID)
-
-  // 整个流程运行期间产生的全局数据
-  globalPayload Json?
-
-  stepInstances StepInstance[]
-  
-  // 如果这是一个子流程实例，它是被哪个父步骤实例调起的？
-  parentStepInstances StepInstance[] @relation("StepToSubChainInstance")
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([chainId])
-  @@index([status])
 }
 
 model StepInstance {
-  id String @id @default(ulid())
+  id     String @id @default(ulid())
+  // 对应的是模板中的哪一个步骤
+  stepId String
+  step   Step   @relation(fields: [stepId], references: [id])
 
   // 归属的工作流实例
   chainInstanceId String
   chainInstance   ChainInstance @relation(fields: [chainInstanceId], references: [id], onDelete: Cascade)
 
-  // 对应的是模板中的哪一个步骤
-  stepId String
-  step   Step   @relation(fields: [stepId], references: [id])
-  
   // 如果这个步骤运行时派生出了一个子流程，记录这个子流程实例的ID
   subChainInstanceId String?
-  subChainInstance   ChainInstance? @relation("StepToSubChainInstance", fields: [subChainInstanceId], references: [id])
+  subChainInstance   ChainInstance? @relation("ParentStep", fields: [subChainInstanceId], references: [id])
 
   // 该步骤的执行状态：PENDING(未开始), READY(待认领), RUNNING(处理中), COMPLETED(完成), FAILED(异常), SKIPPED(跳过)
   status String @default("PENDING")

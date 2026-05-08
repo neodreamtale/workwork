@@ -15,6 +15,7 @@
     "ts-jest": "29.4.1"
   },
   "scripts": {
-    "prisma:generate": "prisma generate --schema=prisma/schema.prisma"
+    "prisma:generate": "prisma generate --schema=prisma/schema.prisma",
+    "db:seed": "npx tsx prisma/seed.ts"
   }
 }

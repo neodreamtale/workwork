@@ -1,19 +1,14 @@
 import Step from './Step';
-import { StepResult } from './StepResult';
 import prisma from '../lib/db';
-import { Chain as ChainTemplate, ChainInstance } from '../generated/client';
+import { Chain as ChainTemplate } from '../generated/client';
 
 export default class Chain<T = any> {
-    // 强制分离：内部只维护这两个 Prisma 对象
     template: ChainTemplate;
-    instance?: ChainInstance;
-
     steps: Step<T>[] = [];
     private idMap: Record<string, Step<T>> = {};
     private tail?: Step<T>;
-    result?: StepResult<any>;
 
-    constructor(template?: Partial<ChainTemplate>, instance?: ChainInstance, autoBuild: boolean = true) {
+    constructor(template?: Partial<ChainTemplate>) {
         this.template = {
             id: template?.id ?? crypto.randomUUID(),
             name: template?.name ?? null,
@@ -22,99 +17,112 @@ export default class Chain<T = any> {
             createdAt: template?.createdAt ?? new Date(),
             updatedAt: template?.updatedAt ?? new Date(),
         };
-        if (instance) {
-            this.instance = instance;
-        }
         this.idMap = {};
-        if (autoBuild) this.buildChain();
     }
 
-    /**
-     * 根据模板 ID 加载一个工作流蓝图
-     */
-    static async loadTemplate<U = any>(id: string, withSteps = false): Promise<Chain<U>> {
-        const chainData = await prisma.chain.findUnique({
-            where: { id },
-            include: withSteps ? { steps: true } : undefined,
-        });
-        
-        console.info('Loaded chain template:', chainData?.id);
-        if (chainData) {
-            const { steps, ...templateProps } = chainData;
-            const c = new Chain<U>(templateProps);
-            
-            if (withSteps && steps) {
-                c.steps = steps.map((s: any) => new Step<U>(s));
-            }
-            c.buildChain();
-            return c;
-        } else {
-            return new Chain<U>({ id });
-        }
-    }
+    // ==========================================
+    // 🎨 设计期 API：画图纸专用 (Template)
+    // ==========================================
 
     /**
-     * 加载一个真正运行中的工作流实例
+     * 构建图纸树：一次性拉取整条链、所有节点，并且【预加载】子流程结构！拒绝 N+1 循环查询！
      */
-    static async loadInstance<U = any>(instanceId: string): Promise<Chain<U>> {
-        const instanceData = await prisma.chainInstance.findUnique({
-            where: { id: instanceId },
-            include: { chain: { include: { steps: true } } }
+    static async buildTemplate<U = any>(templateId: string, prismaClient = prisma): Promise<Chain<U>> {
+        const chainData = await prismaClient.chain.findUnique({
+            where: { id: templateId },
+            include: {
+                steps: {
+                    // 核心1：如果某步骤是子流程，用 Prisma 级联查询一把梭把子图纸拉出来
+                    include: { subChain: { include: { steps: true } } }
+                }
+            },
         });
-        if (!instanceData) throw new Error(`找不到 ID 为 ${instanceId} 的运行实例`);
 
-        const { chain, ...instanceProps } = instanceData;
-        const { steps, ...templateProps } = chain;
-        
-        const c = new Chain<U>(templateProps, instanceProps);
+        if (!chainData) throw new Error(`找不到 ID 为 ${templateId} 的流程模板`);
+
+        const { steps, ...templateProps } = chainData;
+        const c = new Chain<U>(templateProps);
+
+        // 同步装配节点，拒绝发额外 SQL
         if (steps) {
-            c.steps = steps.map((s: any) => new Step<U>(s));
+            c.steps = steps.map((sData: any) => {
+                const { subChain, ...stepProps } = sData;
+                const step = new Step<U>(stepProps);
+
+                // 如果存在嵌套子流程，直接拿刚才查好的数据在内存里拼装
+                if (subChain) {
+                    const subC = new Chain<U>(subChain);
+                    if (subChain.steps) {
+                        subC.steps = subChain.steps.map((ss: any) => new Step<U>(ss));
+                        subC.buildChain();
+                    }
+                    step.subChain = subC;
+                }
+                return step;
+            });
+            c.buildChain();
         }
-        c.buildChain();
         return c;
     }
 
-    modifyName(name: string): Chain<T> {
-        this.template.name = name;
-        return this;
+    async saveTemplate(prismaClient = prisma): Promise<void> {
+        await prismaClient.chain.upsert({
+            where: { id: this.template.id },
+            create: this.template,
+            update: this.template
+        });
+
+        for (const s of this.steps) {
+            s.template.chainId = this.template.id;
+            await prismaClient.step.upsert({
+                where: { id: s.template.id },
+                create: s.template,
+                update: s.template
+            });
+        }
     }
 
-    async progressWithId(nowStepId: string): Promise<Chain<T>> {
-        if (!this.instance) {
-            throw new Error("当前操作的是一个工作流模板！你需要先为它创建一个运行实例 (ChainInstance) 才能执行进度操作。");
+    newStep(step: Step<T>, target: string | null, pos: "before" | "after" | "end" = "end"): Chain<T> {
+        const sid = step.template.id;
+        step.template.chainId = this.template.id;
+
+        if (target && this.idMap[target]) {
+            const targetStep = this.idMap[target];
+            if (pos === 'before') {
+                const oldP = targetStep.template.previousId;
+                step.template.nextId = targetStep.template.id;
+                step.template.previousId = oldP;
+                if (oldP && this.idMap[oldP]) {
+                    this.idMap[oldP].template.nextId = sid;
+                }
+                targetStep.template.previousId = sid;
+            } else if (pos === 'after') {
+                const oldN = targetStep.template.nextId;
+                step.template.previousId = targetStep.template.id;
+                step.template.nextId = oldN;
+                if (oldN && this.idMap[oldN]) {
+                    this.idMap[oldN].template.previousId = sid;
+                }
+                targetStep.template.nextId = sid;
+            } else if (pos === 'end' && this.tail) {
+                const last = this.idMap[this.tail.template.id];
+                last.template.nextId = sid;
+                step.template.previousId = this.tail.template.id;
+                this.tail = step;
+            }
+        } else {
+            this.steps.push(step);
         }
-        
-        this.instance.nowStepId = nowStepId;
-        await prisma.chainInstance.update({
-            where: { id: this.instance.id },
-            data: { nowStepId }
-        });
+        if (sid) this.idMap[sid] = step;
         return this;
     }
 
     buildChain(): Chain<T> {
         this.idMap = {};
         for (const s of this.steps) {
-            if (s.includeSteps) delete s.includeSteps;
-        }
-        for (const s of this.steps) {
             if (s.template.id) this.idMap[s.template.id] = s;
         }
-        for (const s of this.steps) {
-            const parentId = s.template.parentId;
-            if (parentId) {
-                const parent = this.idMap[parentId] ?? this.steps.find(x => x.template.id === parentId);
-                if (parent) {
-                    parent.includeSteps = parent.includeSteps ?? [];
-                    if (!parent.includeSteps.find((x) => x.template.id === s.template.id)) {
-                        parent.includeSteps.push(s);
-                    }
-                }
-            }
-        }
-        
-        // 查找尾节点
-        let tempId: string | null | undefined = this.steps[0]?.template.id; 
+        let tempId: string | null | undefined = this.steps[0]?.template.id;
         while (tempId) {
             const step: Step<T> | undefined = this.idMap[tempId as string];
             if (!step) break;
@@ -123,53 +131,7 @@ export default class Chain<T = any> {
                 this.tail = step;
             }
         }
-        
-        try {
-            this.persistIndexToDb();
-        } catch (e) {}
-
         return this;
-    }
-
-    private async persistIndexToDb(): Promise<void> {
-        try {
-            await prisma.chain.upsert({
-                where: { id: this.template.id },
-                create: this.template,
-                update: this.template
-            });
-
-            const remaining = Array.from(this.steps);
-            const created = new Set<string>();
-            const maxPass = remaining.length + 2;
-            let pass = 0;
-            
-            while (remaining.length && pass < maxPass) {
-                pass++;
-                let progressed = false;
-                for (let i = 0; i < remaining.length; i++) {
-                    const s = remaining[i];
-                    const id = s.template.id;
-                    const pid = s.template.parentId;
-                    
-                    if (!pid || created.has(pid) || !this.idMap[pid]) {
-                        s.template.chainId = this.template.id;
-                        await prisma.step.upsert({ 
-                            where: { id }, 
-                            create: s.template, 
-                            update: s.template 
-                        });
-                        created.add(id);
-                        remaining.splice(i, 1);
-                        progressed = true;
-                        i--;
-                    }
-                }
-                if (!progressed) break;
-            }
-        } catch (err: any) {
-            console.error('Prisma persist error');
-        }
     }
 
     getById(id?: string | null) {
@@ -177,68 +139,60 @@ export default class Chain<T = any> {
         return this.idMap[id];
     }
 
-    newStep(step: Step<T>, target: string | null, pos: "before" | "after" | "end" = "end"): Chain<T> {
-        const sid = step.template.id;
-        if (step.template.parentId) {
-            const parent = this.idMap[step.template.parentId];
-            if (!parent) {
-                throw new Error(`无法找到相关父节点:${step.template.parentId}，无法添加子节点`);
-            }
-            parent.includeSteps = parent.includeSteps ?? [];
-            parent.includeSteps.push(step);
-            if (sid) this.idMap[sid] = step;
-            step.template.chainId = this.template.id;
-        } else {
-            if (target && this.idMap[target]) {
-                const targetStep = this.idMap[target];
-                if (pos === 'before') {
-                    const oldP = targetStep.template.previousId;
-                    step.template.nextId = targetStep.template.id;
-                    step.template.previousId = oldP;
-                    if (oldP && this.idMap[oldP]) {
-                        this.idMap[oldP].template.nextId = sid;
-                    }
-                    targetStep.template.previousId = sid;
-                } else if (pos === 'after') {
-                    const oldN = targetStep.template.nextId;
-                    step.template.previousId = targetStep.template.id;
-                    step.template.nextId = oldN;
-                    if (oldN && this.idMap[oldN]) {
-                        this.idMap[oldN].template.previousId = sid;
-                    }
-                    targetStep.template.nextId = sid;
-                } else if (pos === 'end' && this.tail) {
-                    const last = this.idMap[this.tail.template.id];
-                    last.template.nextId = sid;
-                    step.template.previousId = this.tail.template.id;
-                    this.tail = step;
-                }
-            } else {
-                this.steps.push(step);
-            }
-        }
-        if (sid) this.idMap[sid] = step;
-        return this;
-    }
-
     removeById(id: string) {
         this.steps = this.steps.filter(s => s.template.id !== id);
         delete this.idMap[id];
-        for (const parent of this.steps) {
-            if (parent && parent.includeSteps) {
-                parent.includeSteps = parent.includeSteps.filter(c => c.template.id !== id);
-                if (parent.includeSteps.length === 0) delete parent.includeSteps;
-            }
-        }
     }
 
     get index() {
         return this.idMap as Readonly<Record<string, Step<T>>>;
     }
 
-    async create() {
-        const created = await prisma.chain.create({ data: this.template });
-        this.template.id = created.id;
-        return created;
+    // ==========================================
+    // 🏃 运行期 API：跑业务专用 (Instance)
+    // ==========================================
+
+    /**
+     * 【新车下线】根据图纸发车！生成一个全新的工作流运行实例
+     */
+    static async createInstance(templateId: string, chainPayload?: any, prismaClient = prisma): Promise<string> {
+        const chainTemplate = await prismaClient.chain.findUnique({
+            where: { id: templateId },
+            include: { steps: true }
+        });
+        if (!chainTemplate) throw new Error("图纸不存在");
+        const firstStep = chainTemplate.steps.find((s: any) => !s.previousId) || chainTemplate.steps[0];
+        const instance = await prismaClient.chainInstance.create({
+            data: {
+                templateId: templateId,
+                status: "RUNNING",
+                chainPayload: chainPayload ?? null,
+                nowStepId: firstStep?.id ?? null,
+            }
+        });
+        return instance.id;
+    }
+
+    /**
+     * 【老车点火】根据运行实例 ID，一把拉出图纸、历史节点状态
+     */
+    static async resumeInstance(chainInstanceId: string, prismaClient = prisma) {
+        // 核心2：一把梭哈，效率拉满
+        const instanceData = await prismaClient.chainInstance.findUnique({
+            where: { id: chainInstanceId },
+            include: {
+                // 1. 图纸全拉出来 (连带步骤配置)
+                chain: {
+                    include: {
+                        steps: { include: { subChain: true } }
+                    }
+                },
+                // 2. 所有实际跑过的节点状态全拉出来
+                stepInstances: true
+            }
+        });
+        if (!instanceData) throw new Error(`找不到运行实例：${chainInstanceId}`);
+
+        return instanceData;
     }
 }

@@ -15,7 +15,6 @@ export enum ChainStatus {
  */
 export enum StepStatus {
   PENDING = 'PENDING',       // 未开始
-  READY = 'READY',           // 可执行/待认领
   RUNNING = 'RUNNING',       // 处理中
   COMPLETED = 'COMPLETED',   // 已完成
   FAILED = 'FAILED',         // 失败/异常
