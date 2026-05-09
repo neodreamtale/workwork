@@ -110,11 +110,15 @@ export function StepItem({
 
         {/* 顶层：内容卡片 */}
         <div
-          draggable={!isSwiping && !isOpened}
+          draggable={!isOpened}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
-          onMouseDown={handleTouchStart}
+          onMouseDown={(e) => {
+            // 如果点击的是拖拽手柄，不触发滑动
+            if ((e.target as HTMLElement).closest(".cursor-grab")) return;
+            handleTouchStart(e);
+          }}
           onMouseMove={handleTouchMove}
           onMouseUp={handleTouchEnd}
           onMouseLeave={handleTouchEnd}

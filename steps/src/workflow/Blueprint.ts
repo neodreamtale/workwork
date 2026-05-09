@@ -17,7 +17,6 @@ export class Blueprint {
                 }
             },
         });
-
         if (!chainData) throw new Error(`找不到 ID 为 ${templateId} 的流程模板`);
 
         const { steps, ...templateProps } = chainData;

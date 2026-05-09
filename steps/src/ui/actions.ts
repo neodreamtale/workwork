@@ -58,7 +58,7 @@ function fromFlattenDTO(data: WorkflowChain): Chain {
   return chain;
 }
 
-export async function fetchChainAction(id: string): Promise<WorkflowChain> {
+export async function fetchTemplate(id: string): Promise<WorkflowChain> {
   try {
     const chain = await Blueprint.load(id);
     return toFlattenDTO(chain);
@@ -67,9 +67,7 @@ export async function fetchChainAction(id: string): Promise<WorkflowChain> {
     const dummyChain = new Chain({ id, name: "🚜 玉米种植全自动流水线" });
     const s1 = new Step({ id: "STEP_1", name: "选种与购买" });
     const s2 = new Step({ id: "STEP_2", name: "松土施底肥" });
-    const s3 = new Step({ id: "STEP_3", name: "播种与浇水" });
-    const s4 = new Step({ id: "STEP_4", name: "秋季收割" });
-    dummyChain.newStep(s1).newStep(s2).newStep(s3).newStep(s4);
+    dummyChain.newStep(s1).newStep(s2);
 
     return toFlattenDTO(dummyChain);
   }

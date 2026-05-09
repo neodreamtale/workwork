@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { fetchChainAction, saveTemplate } from "./actions";
+import { fetchTemplate, saveTemplate } from "./actions";
 import { WorkflowChain } from "./types";
 import { ChainView } from "./components/ChainView";
 import { Layers, Save, Loader2 } from "lucide-react";
@@ -20,7 +20,7 @@ export function WorkflowDesigner({ chainId = "CHAIN_TEST_001" }: DesignerProps) 
 
     useEffect(() => {
         // 初始化加载
-        fetchChainAction(chainId).then((data) => {
+        fetchTemplate(chainId).then((data) => {
             setRootChain(data as WorkflowChain);
         });
     }, [chainId]);
