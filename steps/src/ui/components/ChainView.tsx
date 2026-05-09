@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState } from "react";
 import {
   ChevronRight,
   ChevronDown,
@@ -10,6 +10,8 @@ import {
   Trash2
 } from "lucide-react";
 import { WorkflowChain, WorkflowStep } from "../types";
+import { useDragScroll } from "../hooks/useDragScroll";
+import { useSwipe } from "../hooks/useSwipe";
 
 interface StepItemProps {
   step: WorkflowStep;
@@ -32,45 +34,14 @@ export function StepItem({
   onUpdateStep,
   onDelete,
 }: StepItemProps) {
-  // --- 左滑删除相关状态 ---
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [offsetX, setOffsetX] = useState(0); // 负数代表向左滑
-  const [isOpened, setIsOpened] = useState(false);
-  const startX = useRef(0);
-  const SWIPE_LIMIT = 80; // 删除按钮的宽度
-
-  const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
-    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    startX.current = x;
-    setIsSwiping(true);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
-    if (!isSwiping) return;
-    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const diff = x - startX.current;
-
-    // 如果已经开启，则在开启基础上累加；如果没开启，则从0开始
-    let newOffset = isOpened ? -SWIPE_LIMIT + diff : diff;
-
-    // 限制范围：只能向左滑动，最大滑动距离为 SWIPE_LIMIT
-    if (newOffset > 0) newOffset = 0;
-    if (newOffset < -SWIPE_LIMIT - 20) newOffset = -SWIPE_LIMIT - 20; // 允许一点回弹感
-
-    setOffsetX(newOffset);
-  };
-
-  const handleTouchEnd = () => {
-    setIsSwiping(false);
-    // 判断最终停留位置
-    if (offsetX < -SWIPE_LIMIT / 2) {
-      setOffsetX(-SWIPE_LIMIT);
-      setIsOpened(true);
-    } else {
-      setOffsetX(0);
-      setIsOpened(false);
-    }
-  };
+  // --- 使用抽离的 Swipe 逻辑 ---
+  const {
+    isSwiping,
+    offsetX,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd
+  } = useSwipe({ limit: 80 });
 
   const toggleSubChain = () => {
     if (!step.subChain) {
@@ -89,9 +60,8 @@ export function StepItem({
 
   return (
     <div className="group">
-      {/* 仅针对“卡片”部分的滑动容器 */}
       <div className="relative overflow-hidden rounded-2xl">
-        {/* 底层：删除按钮区域 */}
+        {/* 底层：删除按钮 */}
         <div
           className="absolute inset-0 bg-red-500 flex items-center justify-end px-6 text-white transition-opacity duration-200"
           style={{ opacity: offsetX < -10 ? 1 : 0 }}
@@ -110,12 +80,11 @@ export function StepItem({
 
         {/* 顶层：内容卡片 */}
         <div
-          draggable={!isOpened}
+          draggable={!true}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
           onMouseDown={(e) => {
-            // 如果点击的是拖拽手柄，不触发滑动
             if ((e.target as HTMLElement).closest(".cursor-grab")) return;
             handleTouchStart(e);
           }}
@@ -131,22 +100,15 @@ export function StepItem({
           }}
           className="relative flex items-center gap-3 p-4 bg-white border border-slate-100 shadow-sm hover:shadow-md group-hover:border-blue-100 cursor-default select-none z-10"
         >
-          {/* 拖拽手柄 */}
           <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500">
             <GripVertical size={18} />
           </div>
 
-          {/* 步骤内容 */}
           <div className="flex-1">
             <input
               type="text"
               value={step.name || ""}
-              onChange={(e) =>
-                onUpdateStep({
-                  ...step,
-                  name: e.target.value,
-                })
-              }
+              onChange={(e) => onUpdateStep({ ...step, name: e.target.value })}
               placeholder="步骤名称..."
               className="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700 pointer-events-auto"
             />
@@ -162,15 +124,13 @@ export function StepItem({
             </div>
           </div>
 
-          {/* 子流程开关 */}
           <div className="flex items-center gap-1">
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 toggleSubChain();
               }}
-              className={`p-2 rounded-lg transition-colors ${step.subChain ? "text-blue-500 bg-blue-50" : "text-slate-400 hover:bg-slate-100"
-                }`}
+              className={`p-2 rounded-lg transition-colors ${step.subChain ? "text-blue-500 bg-blue-50" : "text-slate-400 hover:bg-slate-100"}`}
             >
               <Layers size={16} />
             </button>
@@ -178,14 +138,11 @@ export function StepItem({
         </div>
       </div>
 
-      {/* 递归渲染子链：放在滑动容器外面，保持缩进逻辑不变 */}
       {step.subChain && (
         <ChainView
           chain={step.subChain}
           level={level + 1}
-          onUpdate={(newSubChain) =>
-            onUpdateStep({ ...step, subChain: newSubChain })
-          }
+          onUpdate={(newSubChain) => onUpdateStep({ ...step, subChain: newSubChain })}
           onDelete={() => onUpdateStep({ ...step, subChain: null })}
         />
       )}
@@ -202,109 +159,25 @@ interface ChainViewProps {
 
 export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) {
   const [isExpanded, setIsExpanded] = useState(true);
-  const [isSwiping, setIsSwiping] = useState(false);
-  const [offsetX, setOffsetX] = useState(0);
-  const [isOpened, setIsOpened] = useState(false);
-  const startX = useRef(0);
-  const SWIPE_LIMIT = 80;
 
-  const handleTouchStart = (e: React.TouchEvent | React.MouseEvent) => {
-    if (level === 0) return; // 根流程不支持左滑删除
-    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    startX.current = x;
-    setIsSwiping(true);
-  };
+  // --- 使用抽离的 Swipe 逻辑 (用于子流程头) ---
+  const {
+    offsetX,
+    isSwiping,
+    handleTouchStart,
+    handleTouchMove,
+    handleTouchEnd
+  } = useSwipe({ limit: 80 });
 
-  const handleTouchMove = (e: React.TouchEvent | React.MouseEvent) => {
-    if (!isSwiping) return;
-    const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
-    const diff = x - startX.current;
-    let newOffset = isOpened ? -SWIPE_LIMIT + diff : diff;
-    if (newOffset > 0) newOffset = 0;
-    if (newOffset < -SWIPE_LIMIT - 20) newOffset = -SWIPE_LIMIT - 20;
-    setOffsetX(newOffset);
-  };
-
-  const handleTouchEnd = () => {
-    setIsSwiping(false);
-    if (offsetX < -SWIPE_LIMIT / 2) {
-      setOffsetX(-SWIPE_LIMIT);
-      setIsOpened(true);
-    } else {
-      setOffsetX(0);
-      setIsOpened(false);
-    }
-  };
-
-  const dragItemIndex = useRef<number | null>(null);
-  const dragOverItemIndex = useRef<number | null>(null);
-  const scrollRafRef = useRef<number | null>(null);
-  const scrollSpeedRef = useRef<number>(0);
-
-  const startAutoScroll = () => {
-    if (scrollRafRef.current) return;
-    const scroll = () => {
-      if (scrollSpeedRef.current !== 0) {
-        window.scrollBy(0, scrollSpeedRef.current);
-        scrollRafRef.current = requestAnimationFrame(scroll);
-      } else {
-        scrollRafRef.current = null;
-      }
-    };
-    scrollRafRef.current = requestAnimationFrame(scroll);
-  };
-
-  const stopAutoScroll = () => {
-    if (scrollRafRef.current) {
-      cancelAnimationFrame(scrollRafRef.current);
-      scrollRafRef.current = null;
-    }
-    scrollSpeedRef.current = 0;
-  };
-
-  const handleDragStart = (index: number) => {
-    dragItemIndex.current = index;
-  };
-
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault();
-    dragOverItemIndex.current = index;
-
-    // --- 持续自动滚动逻辑 ---
-    const threshold = 120;
-    const maxSpeed = 25; // 最大滚动速度
-    const { clientY } = e;
-    const { innerHeight } = window;
-
-    if (clientY < threshold) {
-      // 越靠近顶部滚得越快
-      scrollSpeedRef.current = -Math.max(5, (1 - clientY / threshold) * maxSpeed);
-      startAutoScroll();
-    } else if (clientY > innerHeight - threshold) {
-      // 越靠近底部滚得越快
-      const dist = innerHeight - clientY;
-      scrollSpeedRef.current = Math.max(5, (1 - dist / threshold) * maxSpeed);
-      startAutoScroll();
-    } else {
-      scrollSpeedRef.current = 0;
-    }
-  };
-
-  const handleDragEnd = () => {
-    stopAutoScroll();
-    if (
-      dragItemIndex.current !== null &&
-      dragOverItemIndex.current !== null &&
-      dragItemIndex.current !== dragOverItemIndex.current
-    ) {
-      const newSteps = [...chain.steps];
-      const [draggedItem] = newSteps.splice(dragItemIndex.current, 1);
-      newSteps.splice(dragOverItemIndex.current, 0, draggedItem);
-      onUpdate({ ...chain, steps: newSteps });
-    }
-    dragItemIndex.current = null;
-    dragOverItemIndex.current = null;
-  };
+  // --- 使用抽离的拖拽和自动滚动逻辑 ---
+  const {
+    handleDragStart,
+    handleDragOver,
+    handleDragEnd
+  } = useDragScroll({
+    items: chain.steps,
+    onReorder: (newSteps) => onUpdate({ ...chain, steps: newSteps })
+  });
 
   const addStep = () => {
     const newStep: WorkflowStep = {
@@ -322,13 +195,10 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
 
   return (
     <div className={`relative ${level > 0 ? "ml-8 mt-2" : ""}`}>
-      {level > 0 && (
-        <div className="absolute -left-4 top-0 bottom-0 w-0.5 bg-slate-200"></div>
-      )}
+      {level > 0 && <div className="absolute -left-4 top-0 bottom-0 w-0.5 bg-slate-200"></div>}
 
       {level > 0 && (
         <div className="relative group/chain overflow-hidden rounded-xl mb-2">
-          {/* 底层：子流程删除按钮 */}
           <div
             className="absolute inset-0 bg-red-500 flex items-center justify-end px-6 text-white transition-opacity"
             style={{ opacity: offsetX < -10 ? 1 : 0 }}
@@ -344,9 +214,8 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
             </button>
           </div>
 
-          {/* 顶层：子流程头部 */}
           <div
-            onMouseDown={handleTouchStart}
+            onMouseDown={(e) => level > 0 && handleTouchStart(e)}
             onMouseMove={handleTouchMove}
             onMouseUp={handleTouchEnd}
             onMouseLeave={handleTouchEnd}
@@ -359,10 +228,7 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
             }}
             className="relative bg-slate-50 flex items-center gap-2 p-1 z-10 cursor-default select-none"
           >
-            <button
-              onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1 hover:bg-slate-200 rounded transition-colors text-slate-500"
-            >
+            <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 hover:bg-slate-200 rounded transition-colors text-slate-500">
               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
