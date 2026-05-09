@@ -238,6 +238,29 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
 
   const dragItemIndex = useRef<number | null>(null);
   const dragOverItemIndex = useRef<number | null>(null);
+  const scrollRafRef = useRef<number | null>(null);
+  const scrollSpeedRef = useRef<number>(0);
+
+  const startAutoScroll = () => {
+    if (scrollRafRef.current) return;
+    const scroll = () => {
+      if (scrollSpeedRef.current !== 0) {
+        window.scrollBy(0, scrollSpeedRef.current);
+        scrollRafRef.current = requestAnimationFrame(scroll);
+      } else {
+        scrollRafRef.current = null;
+      }
+    };
+    scrollRafRef.current = requestAnimationFrame(scroll);
+  };
+
+  const stopAutoScroll = () => {
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+    scrollSpeedRef.current = 0;
+  };
 
   const handleDragStart = (index: number) => {
     dragItemIndex.current = index;
@@ -246,9 +269,29 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     dragOverItemIndex.current = index;
+
+    // --- 持续自动滚动逻辑 ---
+    const threshold = 120;
+    const maxSpeed = 25; // 最大滚动速度
+    const { clientY } = e;
+    const { innerHeight } = window;
+
+    if (clientY < threshold) {
+      // 越靠近顶部滚得越快
+      scrollSpeedRef.current = -Math.max(5, (1 - clientY / threshold) * maxSpeed);
+      startAutoScroll();
+    } else if (clientY > innerHeight - threshold) {
+      // 越靠近底部滚得越快
+      const dist = innerHeight - clientY;
+      scrollSpeedRef.current = Math.max(5, (1 - dist / threshold) * maxSpeed);
+      startAutoScroll();
+    } else {
+      scrollSpeedRef.current = 0;
+    }
   };
 
   const handleDragEnd = () => {
+    stopAutoScroll();
     if (
       dragItemIndex.current !== null &&
       dragOverItemIndex.current !== null &&

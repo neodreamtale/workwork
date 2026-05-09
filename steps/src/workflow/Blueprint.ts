@@ -5,15 +5,23 @@ import Step from '../types/Step';
 
 export class Blueprint {
     /**
-     * 构建图纸树：一次性拉取整条链、所有节点，并且【预加载】子流程结构！拒绝 N+1 循环查询！
+     * 构建图纸 tree：一次性拉取整条链、所有节点，并且【预加载】子流程结构！拒绝 N+1 循环查询！
      */
     static async load<U = any>(templateId: string, prismaClient = prisma): Promise<Chain<U>> {
         const chainData = await prismaClient.chain.findUnique({
             where: { id: templateId },
             include: {
                 steps: {
-                    // 核心1：如果某步骤是子流程，用 Prisma 级联查询一把梭把子图纸拉出来
-                    include: { subChain: { include: { steps: true } } }
+                    orderBy: { sortOrder: 'asc' },
+                    include: {
+                        subChain: {
+                            include: {
+                                steps: {
+                                    orderBy: { sortOrder: 'asc' }
+                                }
+                            }
+                        }
+                    }
                 }
             },
         });
