@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { fetchChainAction, saveChainAction } from "./actions";
+import { fetchChainAction, saveTemplate } from "./actions";
 import { WorkflowChain } from "./types";
 import { ChainView } from "./components/ChainView";
 import { Layers, Save, Loader2 } from "lucide-react";
@@ -29,9 +29,10 @@ export function WorkflowDesigner({ chainId = "CHAIN_TEST_001" }: DesignerProps) 
         if (!rootChain) return;
         setSaving(true);
         try {
-            await saveChainAction(rootChain);
+            await saveTemplate(rootChain);
             alert("保存成功！");
         } catch (e) {
+            console.error(e);
             alert("保存失败");
         } finally {
             setSaving(false);
@@ -55,16 +56,27 @@ export function WorkflowDesigner({ chainId = "CHAIN_TEST_001" }: DesignerProps) 
                         <Layers className="text-blue-500" />
                         <input
                             type="text"
-                            value={rootChain.template.name || ""}
+                            value={rootChain.name || ""}
                             onChange={(e) => setRootChain({
                                 ...rootChain,
-                                template: { ...rootChain.template, name: e.target.value }
+                                name: e.target.value
                             })}
                             className="text-xl font-bold text-slate-800 bg-transparent border-none focus:ring-2 focus:ring-blue-100 rounded-lg px-1 -ml-1 w-full placeholder:text-slate-300"
                             placeholder="点击设置模板名称..."
                         />
                     </div>
-                    <p className="text-xs text-slate-400 mt-1">ID: {rootChain.template.id}</p>
+                    <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
+                        <span className="shrink-0">ID:</span>
+                        <input
+                            type="text"
+                            value={rootChain.id}
+                            onChange={(e) => setRootChain({
+                                ...rootChain,
+                                id: e.target.value
+                            })}
+                            className="w-full bg-transparent border-none focus:ring-1 focus:ring-blue-100 rounded px-1 py-0 font-mono"
+                        />
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-2">

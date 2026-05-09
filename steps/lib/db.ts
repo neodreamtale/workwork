@@ -1,21 +1,22 @@
-const path = require('path');
-// load local .env so DATABASE_URL is available before importing Prisma
-try {
-    const dotenv = require('dotenv');
-    dotenv.config({ path: path.join(__dirname, '..', '.env') });
-} catch (e) {
-}
+import { PrismaClient } from '../generated/client';
+import { PrismaBetterSqlite3 } from '@prisma/adapter-better-sqlite3';
+import path from 'path';
 
-const { PrismaClient } = require('../generated/client');
+// 针对 Prisma 7 的新要求，必须显式传递 adapter
+// 使用 process.cwd() 确保在 Next.js 环境下路径正确
+const dbPath = path.join(process.cwd(), 'steps/prisma/dev.db');
+
+const prismaClientSingleton = () => {
+    const adapter = new PrismaBetterSqlite3({ url: `file:${dbPath}` });
+    return new PrismaClient({ adapter });
+};
 
 declare global {
-    // allow any to avoid type conflicts across different TS builds
-    var prisma: any
+    var prismaSteps: undefined | ReturnType<typeof prismaClientSingleton>;
 }
 
-// reuse client in dev to avoid exhausting connections
-const prisma = globalThis.prisma || new PrismaClient({});
-
-if (process.env.NODE_ENV === 'development') globalThis.prisma = prisma;
+const prisma = globalThis.prismaSteps ?? prismaClientSingleton();
 
 export default prisma;
+
+if (process.env.NODE_ENV !== 'production') globalThis.prismaSteps = prisma;

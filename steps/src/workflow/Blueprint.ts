@@ -1,4 +1,5 @@
 import prisma from '../../lib/db';
+
 import Chain from '../types/Chain';
 import Step from '../types/Step';
 
@@ -46,21 +47,44 @@ export class Blueprint {
 
     /**
      * 将在内存中画好、改好的图纸持久化到数据库
+     * 采用递归保存策略，支持深层嵌套子流程
      */
     static async save(chain: Chain<any>, prismaClient = prisma): Promise<void> {
-        await prismaClient.chain.upsert({
-            where: { id: chain.template.id },
-            create: chain.template,
-            update: chain.template
-        });
-
-        for (const s of chain.steps) {
-            s.template.chainId = chain.template.id;
-            await prismaClient.step.upsert({
-                where: { id: s.template.id },
-                create: s.template,
-                update: s.template
+        await prismaClient.$transaction(async (tx) => {
+            // 1. 保存当前链的元数据
+            await tx.chain.upsert({
+                where: { id: chain.template.id },
+                create: chain.template,
+                update: chain.template
             });
-        }
+
+            // 2. 清理：删除那些已经不在内存数组里的数据库步骤 (物理删除)
+            const currentStepIds = chain.steps.map(s => s.template.id);
+            await tx.step.deleteMany({
+                where: {
+                    chainId: chain.template.id,
+                    id: { notIn: currentStepIds }
+                }
+            });
+
+            // 3. 递归保存每个步骤
+            for (const s of chain.steps) {
+                // 如果步骤有关联的子流程图纸，先递归保存子流程
+                if (s.subChain) {
+                    await this.save(s.subChain, tx as any);
+                    // 确保步骤模板里的子流程 ID 也是最新的
+                    s.template.subChainId = s.subChain.template.id;
+                } else {
+                    s.template.subChainId = null;
+                }
+
+                s.template.chainId = chain.template.id;
+                await tx.step.upsert({
+                    where: { id: s.template.id },
+                    create: s.template,
+                    update: s.template
+                });
+            }
+        });
     }
 }

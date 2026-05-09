@@ -1,17 +1,15 @@
 import { Chain as ChainTemplate, Step as StepTemplate } from '../../generated/client';
 
 /**
- * 步骤的 DTO 表现形式（前端交互用）
+ * 扁平化的步骤类型：直接包含 Template 的所有字段 + 子流程
  */
-export interface WorkflowStep {
-  template: StepTemplate;
+export type WorkflowStep = StepTemplate & {
   subChain: WorkflowChain | null;
-}
+};
 
 /**
- * 流程链的 DTO 表现形式（前端交互用）
+ * 扁平化的流程链类型：直接包含 Template 的所有字段 + 步骤数组
  */
-export interface WorkflowChain {
-  template: ChainTemplate;
+export type WorkflowChain = ChainTemplate & {
   steps: WorkflowStep[];
-}
+};

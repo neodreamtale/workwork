@@ -1,10 +1,11 @@
-import prisma from '../../lib/db';
+import prisma from './db';
+
 import Chain from '../types/Chain';
 import Step from '../types/Step';
 import { Blueprint } from './Blueprint';
 
 export class WorkflowEngine {
-    
+
     // ==========================================
     // 基础流转驱动 API
     // ==========================================
@@ -18,7 +19,7 @@ export class WorkflowEngine {
             include: { steps: true }
         });
         if (!chainTemplate) throw new Error("图纸不存在");
-        
+
         const instance = await prisma.chainInstance.create({
             data: {
                 templateId: templateId,
@@ -39,7 +40,7 @@ export class WorkflowEngine {
             where: { id: stepInstanceId },
             data: { status: 'COMPLETED', payload: payload ?? {} }
         });
-        
+
         await this.pull(stepInstance.chainInstanceId);
     }
 
@@ -65,7 +66,7 @@ export class WorkflowEngine {
             where: { id: chainInstanceId },
             include: {
                 chain: { include: { steps: { include: { subChain: true } } } },
-                stepInstances: true 
+                stepInstances: true
             }
         });
         if (!instanceData) throw new Error(`找不到运行实例：${chainInstanceId}`);
@@ -77,7 +78,7 @@ export class WorkflowEngine {
      */
     static async pull(chainInstanceId: string) {
         const data = await this.getRunningContext(chainInstanceId);
-        if (data.status !== 'RUNNING') return; 
+        if (data.status !== 'RUNNING') return;
 
         // 拿到图纸结构（走 Blueprint 内存加载）
         const chainTemplate = await Blueprint.load(data.templateId);
@@ -86,17 +87,17 @@ export class WorkflowEngine {
         const activeSteps = this.findRunnableSteps(chainTemplate, data.stepInstances);
 
         if (activeSteps.length === 0) {
-            const allCompleted = chainTemplate.steps.every(s => 
+            const allCompleted = chainTemplate.steps.every(s =>
                 data.stepInstances.some((si: any) => si.stepId === s.template.id && si.status === 'COMPLETED')
             );
-            
+
             if (allCompleted) {
                 // 大流程正式宣告竣工！
                 await prisma.chainInstance.update({
                     where: { id: chainInstanceId },
                     data: { status: 'COMPLETED' }
                 });
-                
+
                 // 子流程竣工自动唤醒父流程！
                 if (data.parentStepInstanceId) {
                     await this.completeStep(data.parentStepInstanceId, data.chainPayload);
@@ -153,9 +154,9 @@ export class WorkflowEngine {
 
         if (!stepInstance) {
             stepInstance = await prisma.stepInstance.create({
-                data: { 
-                    stepId: step.template.id, 
-                    chainInstanceId, 
+                data: {
+                    stepId: step.template.id,
+                    chainInstanceId,
                     status: "RUNNING",
                     sortOrder: step.template.sortOrder
                 }
@@ -182,7 +183,7 @@ export class WorkflowEngine {
         for (let i = 0; i < chainTemplate.steps.length; i++) {
             const step = chainTemplate.steps[i];
             const instance = existingInstances.find(si => si.stepId === step.template.id);
-            
+
             // 已完成或运行中的节点，不再重复触发
             if (instance?.status === 'COMPLETED' || instance?.status === 'RUNNING') continue;
 

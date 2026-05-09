@@ -75,14 +75,12 @@ export function StepItem({
   const toggleSubChain = () => {
     if (!step.subChain) {
       const newSubChain: WorkflowChain = {
-        template: {
-          id: `CHAIN_${Math.random().toString(36).substr(2, 9)}`,
-          name: `${step.template.name} 的子流程`,
-          description: null,
-          chainLength: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
+        id: `CHAIN_${Math.random().toString(36).substr(2, 9)}`,
+        name: `${step.name} 的子流程`,
+        description: null,
+        chainLength: 0,
+        createdAt: new Date(),
+        updatedAt: new Date(),
         steps: [],
       };
       onUpdateStep({ ...step, subChain: newSubChain });
@@ -138,11 +136,11 @@ export function StepItem({
           <div className="flex-1">
             <input
               type="text"
-              value={step.template.name || ""}
+              value={step.name || ""}
               onChange={(e) =>
                 onUpdateStep({
                   ...step,
-                  template: { ...step.template, name: e.target.value },
+                  name: e.target.value,
                 })
               }
               placeholder="步骤名称..."
@@ -263,15 +261,13 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
 
   const addStep = () => {
     const newStep: WorkflowStep = {
-      template: {
-        id: `STEP_${Math.random().toString(36).substr(2, 9)}`,
-        name: "新步骤",
-        chainId: chain.template.id,
-        sortOrder: chain.steps.length,
-        subChainId: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      },
+      id: `STEP_${Math.random().toString(36).substr(2, 9)}`,
+      name: "新步骤",
+      chainId: chain.id,
+      sortOrder: chain.steps.length,
+      subChainId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
       subChain: null,
     };
     onUpdate({ ...chain, steps: [...chain.steps, newStep] });
@@ -323,7 +319,7 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </button>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              子流程: {chain.template.name || "未命名"}
+              子流程: {chain.name || "未命名"}
             </span>
           </div>
         </div>
@@ -333,7 +329,7 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
         <div className="space-y-3">
           {chain.steps.map((step, index) => (
             <StepItem
-              key={step.template.id}
+              key={step.id}
               step={step}
               index={index}
               level={level}
