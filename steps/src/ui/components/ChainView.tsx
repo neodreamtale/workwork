@@ -49,14 +49,14 @@ export function StepItem({
     if (!isSwiping) return;
     const x = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const diff = x - startX.current;
-    
+
     // 如果已经开启，则在开启基础上累加；如果没开启，则从0开始
     let newOffset = isOpened ? -SWIPE_LIMIT + diff : diff;
-    
+
     // 限制范围：只能向左滑动，最大滑动距离为 SWIPE_LIMIT
     if (newOffset > 0) newOffset = 0;
     if (newOffset < -SWIPE_LIMIT - 20) newOffset = -SWIPE_LIMIT - 20; // 允许一点回弹感
-    
+
     setOffsetX(newOffset);
   };
 
@@ -90,91 +90,93 @@ export function StepItem({
   };
 
   return (
-    <div className="group relative">
-      {/* 底层：删除按钮区域 */}
-      <div 
-        className="absolute inset-0 bg-red-500 rounded-2xl flex items-center justify-end px-6 text-white transition-opacity duration-200"
-        style={{ opacity: offsetX < -10 ? 1 : 0 }}
-      >
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            if(confirm("确定要删除此步骤吗？")) onDelete();
-          }}
-          className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
+    <div className="group">
+      {/* 仅针对“卡片”部分的滑动容器 */}
+      <div className="relative overflow-hidden rounded-2xl">
+        {/* 底层：删除按钮区域 */}
+        <div
+          className="absolute inset-0 bg-red-500 flex items-center justify-end px-6 text-white transition-opacity duration-200"
+          style={{ opacity: offsetX < -10 ? 1 : 0 }}
         >
-          <Trash2 size={20} />
-          <span className="text-[10px] font-bold uppercase tracking-widest">Delete</span>
-        </button>
-      </div>
-
-      {/* 顶层：内容卡片 */}
-      <div
-        draggable={!isSwiping && !isOpened}
-        onDragStart={onDragStart}
-        onDragOver={onDragOver}
-        onDragEnd={onDragEnd}
-        onMouseDown={handleTouchStart}
-        onMouseMove={handleTouchMove}
-        onMouseUp={handleTouchEnd}
-        onMouseLeave={handleTouchEnd}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        style={{ 
-          transform: `translateX(${offsetX}px)`,
-          transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
-        }}
-        className="relative flex items-center gap-3 p-4 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md group-hover:border-blue-100 cursor-default select-none z-10"
-      >
-        {/* 拖拽手柄 */}
-        <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500">
-          <GripVertical size={18} />
-        </div>
-
-        {/* 步骤内容 */}
-        <div className="flex-1">
-          <input
-            type="text"
-            value={step.template.name || ""}
-            onChange={(e) =>
-              onUpdateStep({
-                ...step,
-                template: { ...step.template, name: e.target.value },
-              })
-            }
-            placeholder="步骤名称..."
-            className="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700 pointer-events-auto"
-          />
-          <div className="flex items-center gap-4 mt-1">
-            <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase">
-              Level {level} · Index {index}
-            </span>
-            {step.subChain && (
-              <span className="text-[10px] text-blue-500 font-bold flex items-center gap-0.5 uppercase">
-                <Layers size={10} /> 包含子流程
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* 子流程开关（常驻图标） */}
-        <div className="flex items-center gap-1">
           <button
             onClick={(e) => {
               e.stopPropagation();
-              toggleSubChain();
+              if (confirm("确定要删除此步骤吗？")) onDelete();
             }}
-            className={`p-2 rounded-lg transition-colors ${
-              step.subChain ? "text-blue-500 bg-blue-50" : "text-slate-400 hover:bg-slate-100"
-            }`}
+            className="flex flex-col items-center gap-1 active:scale-90 transition-transform"
           >
-            <Layers size={16} />
+            <Trash2 size={20} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Delete</span>
           </button>
+        </div>
+
+        {/* 顶层：内容卡片 */}
+        <div
+          draggable={!isSwiping && !isOpened}
+          onDragStart={onDragStart}
+          onDragOver={onDragOver}
+          onDragEnd={onDragEnd}
+          onMouseDown={handleTouchStart}
+          onMouseMove={handleTouchMove}
+          onMouseUp={handleTouchEnd}
+          onMouseLeave={handleTouchEnd}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          style={{
+            transform: `translateX(${offsetX}px)`,
+            transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
+          }}
+          className="relative flex items-center gap-3 p-4 bg-white border border-slate-100 shadow-sm hover:shadow-md group-hover:border-blue-100 cursor-default select-none z-10"
+        >
+          {/* 拖拽手柄 */}
+          <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500">
+            <GripVertical size={18} />
+          </div>
+
+          {/* 步骤内容 */}
+          <div className="flex-1">
+            <input
+              type="text"
+              value={step.template.name || ""}
+              onChange={(e) =>
+                onUpdateStep({
+                  ...step,
+                  template: { ...step.template, name: e.target.value },
+                })
+              }
+              placeholder="步骤名称..."
+              className="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700 pointer-events-auto"
+            />
+            <div className="flex items-center gap-4 mt-1">
+              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase">
+                Level {level} · Index {index}
+              </span>
+              {step.subChain && (
+                <span className="text-[10px] text-blue-500 font-bold flex items-center gap-0.5 uppercase">
+                  <Layers size={10} /> 包含子流程
+                </span>
+              )}
+            </div>
+          </div>
+
+          {/* 子流程开关 */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleSubChain();
+              }}
+              className={`p-2 rounded-lg transition-colors ${step.subChain ? "text-blue-500 bg-blue-50" : "text-slate-400 hover:bg-slate-100"
+                }`}
+            >
+              <Layers size={16} />
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* 递归渲染子链 */}
+      {/* 递归渲染子链：放在滑动容器外面，保持缩进逻辑不变 */}
       {step.subChain && (
         <ChainView
           chain={step.subChain}
@@ -284,18 +286,18 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
       {level > 0 && (
         <div className="relative group/chain overflow-hidden rounded-xl mb-2">
           {/* 底层：子流程删除按钮 */}
-          <div 
+          <div
             className="absolute inset-0 bg-red-500 flex items-center justify-end px-6 text-white transition-opacity"
             style={{ opacity: offsetX < -10 ? 1 : 0 }}
           >
-            <button 
+            <button
               onClick={(e) => {
                 e.stopPropagation();
-                if(confirm("确定要删除整个子流程吗？")) onDelete?.();
+                if (confirm("确定要删除整个子流程吗？")) onDelete?.();
               }}
               className="flex items-center gap-1 font-bold text-[10px]"
             >
-              <Trash2 size={14} /> REMOVE CHAIN
+              <Trash2 size={16} /> DEL
             </button>
           </div>
 
@@ -308,7 +310,7 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
-            style={{ 
+            style={{
               transform: `translateX(${offsetX}px)`,
               transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
             }}
