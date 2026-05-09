@@ -80,7 +80,7 @@ export function StepItem({
 
         {/* 顶层：内容卡片 */}
         <div
-          draggable={!true}
+          draggable={true}
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
