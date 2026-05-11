@@ -73,4 +73,57 @@ export class Blueprint {
             }
         });
     }
+
+    /**
+     * 查询所有模板列表 (带分页)
+     */
+    static async findAll(page = 1, pageSize = 10, prismaClient = prisma) {
+        const skip = (page - 1) * pageSize;
+        const [items, total] = await Promise.all([
+            prismaClient.chain.findMany({
+                skip,
+                take: pageSize,
+                orderBy: { updatedAt: 'desc' }
+            }),
+            prismaClient.chain.count()
+        ]);
+
+        return { items, total };
+    }
+
+    /**
+     * 实例化一个模板
+     */
+    static async instantiate(templateId: string, prismaClient = prisma) {
+        return await prismaClient.$transaction(async (tx) => {
+            // 1. 获取模板数据
+            const template = await tx.chain.findUnique({
+                where: { id: templateId },
+                include: { steps: { orderBy: { sortOrder: 'asc' } } }
+            });
+            if (!template) throw new Error("模板不存在");
+
+            // 2. 创建工作流实例
+            const instance = await tx.chainInstance.create({
+                data: {
+                    templateId: template.id,
+                    status: 'PENDING',
+                }
+            });
+
+            // 3. 创建步骤实例（打快照）
+            if (template.steps.length > 0) {
+                await tx.stepInstance.createMany({
+                    data: template.steps.map(s => ({
+                        stepId: s.id,
+                        chainInstanceId: instance.id,
+                        sortOrder: s.sortOrder,
+                        status: 'PENDING',
+                    }))
+                });
+            }
+
+            return instance;
+        });
+    }
 }

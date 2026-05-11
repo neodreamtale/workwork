@@ -41,9 +41,9 @@ export function StepCard({
         transform: `translateX(${offsetX}px)`,
         transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
       }}
-      className="relative flex items-center gap-2 md:gap-3 p-3 md:p-4 bg-white border border-slate-100 shadow-sm hover:shadow-md group-hover:border-blue-100 cursor-default select-none z-10"
+      className="relative card-surface flex items-center gap-2 md:gap-3 p-3 md:p-4 group-hover:border-blue-100 dark:group-hover:border-blue-900 cursor-default select-none z-10 transition-all"
     >
-      <div className="cursor-grab active:cursor-grabbing text-slate-300 hover:text-slate-500 shrink-0">
+      <div className="cursor-grab active:cursor-grabbing text-slate-300 dark:text-slate-700 hover:text-slate-500 dark:hover:text-slate-500 shrink-0">
         <GripVertical size={18} />
       </div>
 

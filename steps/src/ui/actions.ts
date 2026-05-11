@@ -80,3 +80,12 @@ export async function saveTemplate(data: WorkflowChain) {
   await Blueprint.save(chain);
   return { success: true };
 }
+
+export async function getTemplateList(page = 1, pageSize = 10) {
+  return await Blueprint.findAll(page, pageSize);
+}
+
+export async function createInstance(templateId: string) {
+  const instance = await Blueprint.instantiate(templateId);
+  return { success: true, instanceId: instance.id };
+}

@@ -10,17 +10,12 @@ interface DesignerProps {
     chainId?: string;
 }
 
-/**
- * 核心：工作流设计器主入口
- * 负责数据加载、根状态管理以及全局操作按钮
- */
 export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
     const [rootChain, setRootChain] = useState<WorkflowChain | null>(null);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
-        // 初始化加载
-        fetchTemplate("9cfce9cb-39bd-4e32-9c1c-9f25fa4a66e5").then((data) => {
+        fetchTemplate(chainId).then((data) => {
             setRootChain(data as WorkflowChain);
         });
     }, [chainId]);
@@ -48,9 +43,9 @@ export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
     }
 
     return (
-        <div className="max-w-4xl mx-auto p-6 bg-slate-50 min-h-screen">
-            {/* 顶部全局工具栏 */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-0 z-50 backdrop-blur-md bg-white/80">
+        <div className="max-w-4xl mx-auto p-6 bg-page min-h-screen">
+            {/* 顶部工具栏：使用 card-surface 语义类 */}
+            <div className="card-surface flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 p-4 md:p-6 sticky top-0 z-50 backdrop-blur-md bg-white/80 dark:bg-slate-900/80">
                 <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                         <Layers className="text-blue-500 shrink-0" />
@@ -61,12 +56,12 @@ export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
                                 ...rootChain,
                                 name: e.target.value
                             })}
-                            className="text-lg md:text-xl font-bold text-slate-800 bg-transparent border-none focus:ring-2 focus:ring-blue-100 rounded-lg px-1 -ml-1 w-full placeholder:text-slate-300 truncate"
+                            className="text-lg md:text-xl font-bold text-primary bg-transparent border-none focus:ring-0 rounded-lg px-1 -ml-1 w-full placeholder:text-slate-300 dark:placeholder:text-slate-700 truncate"
                             placeholder="点击设置模板名称..."
                         />
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] md:text-xs text-slate-400 mt-1">
-                        <span className="font-mono bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                    <div className="flex items-center gap-1 text-[10px] md:text-xs text-secondary mt-1">
+                        <span className="font-mono bg-slate-50 dark:bg-slate-800 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800">
                             ID: {rootChain.id}
                         </span>
                     </div>
@@ -76,7 +71,7 @@ export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-200 active:scale-95 text-sm"
+                        className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-500/20 active:scale-95 text-sm"
                     >
                         {saving ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
@@ -88,7 +83,6 @@ export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
                 </div>
             </div>
 
-            {/* 画布区域：递归渲染开始 */}
             <div className="space-y-4">
                 <ChainView
                     chain={rootChain}

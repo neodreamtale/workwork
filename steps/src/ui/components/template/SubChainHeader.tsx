@@ -32,7 +32,7 @@ export function SubChainHeader({
 }: SubChainHeaderProps) {
   return (
     <div className="relative group/chain overflow-hidden rounded-xl mb-2">
-      {/* 背景层：直接写简单的删除按钮 */}
+      {/* 背景层 */}
       <div
         className="absolute inset-0 bg-red-500 flex items-center justify-end px-6 text-white transition-opacity"
         style={{ opacity: offsetX < -10 ? 1 : 0 }}
@@ -55,12 +55,12 @@ export function SubChainHeader({
           transform: `translateX(${offsetX}px)`,
           transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1)'
         }}
-        className="relative bg-slate-50 flex items-center gap-2 p-1 z-10 cursor-default select-none"
+        className="relative bg-slate-50 dark:bg-slate-900 flex items-center gap-2 p-1 z-10 cursor-default select-none border border-transparent dark:border-slate-800/50 transition-colors"
       >
         <button 
           onClick={onToggle} 
           disabled={isLoading}
-          className="p-1 hover:bg-slate-200 rounded transition-colors text-slate-500"
+          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-800 rounded transition-colors text-slate-500 dark:text-slate-400"
         >
           {isLoading ? (
             <Loader2 size={14} className="animate-spin text-blue-500" />
@@ -68,7 +68,7 @@ export function SubChainHeader({
             isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
           )}
         </button>
-        <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider truncate">
+        <span className="text-xs font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider truncate">
           子流程: {name}
         </span>
       </div>

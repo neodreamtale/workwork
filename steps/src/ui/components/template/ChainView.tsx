@@ -109,7 +109,7 @@ export function StepItem({
             value={step.name || ""}
             onChange={(e) => onUpdateStep({ ...step, name: e.target.value })}
             placeholder="步骤名称..."
-            className="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700 pointer-events-auto text-sm md:text-base p-0 truncate"
+            className="w-full bg-transparent border-none focus:ring-0 font-medium text-primary pointer-events-auto text-sm md:text-base p-0 truncate transition-colors"
           />
           <div className="flex items-center gap-4 mt-1 overflow-hidden">
             {(step.subChainId || step.subChain) && (
