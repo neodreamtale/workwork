@@ -2,14 +2,15 @@
 
 import React, { useEffect, useState } from "react";
 import { getTemplateList, createInstance } from "../../actions";
-import { Layers, Plus, Edit3, Loader2, CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Layers, Plus, Edit3, Loader2, CheckCircle2, ChevronLeft, ChevronRight, Eye } from "lucide-react";
 
 interface TemplateListProps {
   onEdit: (id: string) => void;
+  onView: (id: string) => void;
   onInstanceCreated?: (instanceId: string) => void;
 }
 
-export function TemplateList({ onEdit, onInstanceCreated }: TemplateListProps) {
+export function TemplateList({ onEdit, onView, onInstanceCreated }: TemplateListProps) {
   const [templates, setTemplates] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -88,32 +89,39 @@ export function TemplateList({ onEdit, onInstanceCreated }: TemplateListProps) {
             {templates.map((t) => (
               <div 
                 key={t.id}
-                className="card-surface p-5 group"
+                className="card-surface p-5 group flex flex-col hover:border-blue-200 dark:hover:border-blue-800 transition-all active:scale-[0.98]"
               >
-                <div className="flex justify-between items-start mb-4">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold text-slate-700 dark:text-slate-200 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                      {t.name || "未命名模板"}
-                    </h3>
-                    <p className="text-[10px] font-mono text-secondary mt-1 uppercase tracking-wider">
-                      ID: {t.id.slice(-8)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-1">
+                {/* 可点击的主体区域 */}
+                <div 
+                  className="cursor-pointer flex-1 mb-4"
+                  onClick={() => onView(t.id)}
+                >
+                  <div className="flex justify-between items-start">
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold text-slate-700 dark:text-slate-200 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                        {t.name || "未命名模板"}
+                      </h3>
+                      <p className="text-[10px] font-mono text-secondary mt-1 uppercase tracking-wider">
+                        ID: {t.id.slice(-8)}
+                      </p>
+                    </div>
                     <button
-                      onClick={() => onEdit(t.id)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEdit(t.id);
+                      }}
                       className="p-2 text-slate-400 hover:text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-lg transition-colors"
                       title="编辑模板"
                     >
                       <Edit3 size={16} />
                     </button>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-4 text-[10px] text-secondary mb-6">
-                  <div className="flex items-center gap-1">
-                    <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
-                    更新于: {new Date(t.updatedAt).toLocaleString()}
+                  <div className="flex items-center gap-4 text-[10px] text-secondary mt-4">
+                    <div className="flex items-center gap-1">
+                      <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-700" />
+                      更新于: {new Date(t.updatedAt).toLocaleString()}
+                    </div>
                   </div>
                 </div>
 
@@ -133,6 +141,7 @@ export function TemplateList({ onEdit, onInstanceCreated }: TemplateListProps) {
             ))}
           </div>
 
+          {/* 分页控制 */}
           {totalPages > 1 && (
             <div className="flex items-center justify-center gap-4 mt-8">
               <button

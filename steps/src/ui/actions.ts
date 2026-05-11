@@ -2,63 +2,8 @@
 
 import { Blueprint } from '../workflow/Blueprint';
 import Chain from '../types/Chain';
-import Step from '../types/Step';
-import { WorkflowChain, WorkflowStep } from './types';
-
-/**
- * 内部转换：将带有 .template 嵌套的类实例转换为扁平的 DTO 对象
- */
-function toFlattenDTO(chain: any): WorkflowChain {
-  const dto = {
-    ...chain.template,
-    steps: (chain.steps || []).map((s: any) => ({
-      ...s.template,
-      // 核心：如果是 undefined 表示还没加载，要保留这个状态给前端
-      subChain: s.subChain === undefined ? undefined : (s.subChain ? toFlattenDTO(s.subChain) : null)
-    }))
-  };
-  return dto as WorkflowChain;
-}
-
-/**
- * 内部转换：将扁平的 DTO 对象还原为类实例
- */
-function fromFlattenDTO(data: WorkflowChain): Chain {
-  // 防御性：如果前端不小心传了数组，取第一个
-  const raw = Array.isArray(data) ? data[0] : data;
-
-  const { steps, ...fields } = raw;
-
-  // 转换日期字段，防止序列化字符串导致 Prisma 报错
-  const templateFields = {
-    ...fields,
-    createdAt: fields.createdAt ? new Date(fields.createdAt.toString().replace(/^\$D/, '')) : new Date(),
-    updatedAt: fields.updatedAt ? new Date(fields.updatedAt.toString().replace(/^\$D/, '')) : new Date(),
-  };
-
-  const chain = new Chain(templateFields);
-
-  chain.steps = (steps || []).map((sd: WorkflowStep) => {
-    const { subChain, ...sFields } = sd;
-
-    // 强制同步 chainId，防止用户修改了顶层 ID 后导致子步骤关联失败
-    const stepFields = {
-      ...sFields,
-      chainId: chain.template.id, // 核心：强制跟随父级 ID
-      createdAt: sFields.createdAt ? new Date(sFields.createdAt.toString().replace(/^\$D/, '')) : new Date(),
-      updatedAt: sFields.updatedAt ? new Date(sFields.updatedAt.toString().replace(/^\$D/, '')) : new Date(),
-    };
-
-    const stepInstance = new Step(stepFields);
-    // 只有当 subChain 存在或明确为 null 时才还原（undefined 表示没加载，不干预）
-    if (subChain !== undefined) {
-      stepInstance.subChain = subChain ? fromFlattenDTO(subChain as WorkflowChain) : null;
-    }
-    return stepInstance;
-  });
-
-  return chain;
-}
+import { WorkflowChain } from './types';
+import { toFlattenDTO, fromFlattenDTO } from './utils';
 
 export async function fetchTemplate(id: string): Promise<WorkflowChain> {
   try {
@@ -66,26 +11,28 @@ export async function fetchTemplate(id: string): Promise<WorkflowChain> {
     return toFlattenDTO(chain);
   } catch (e) {
     console.error("查不到对应图纸，走 Mock 逻辑", e);
-    const dummyChain = new Chain({ id: id || undefined, name: "新工作流模板" });
+    const dummyChain = new Chain({ id: id || undefined, name: "新工作流模板", isMain: true });
     return toFlattenDTO(dummyChain);
   }
 }
 
 export async function saveTemplate(data: WorkflowChain) {
-  // 1. 还原实体
   const chain = fromFlattenDTO(data);
-  // 2. 重新刷新 sortOrder 序号
   chain.buildChain();
-  // 3. 落库
   await Blueprint.save(chain);
   return { success: true };
 }
 
 export async function getTemplateList(page = 1, pageSize = 10) {
-  return await Blueprint.findAll(page, pageSize);
+  return await Blueprint.findMainTemplates(page, pageSize);
 }
 
 export async function createInstance(templateId: string) {
   const instance = await Blueprint.instantiate(templateId);
   return { success: true, instanceId: instance.id };
+}
+
+export async function fetchTemplateDeep(id: string): Promise<WorkflowChain> {
+  const chain = await Blueprint.loadDeep(id);
+  return toFlattenDTO(chain);
 }

@@ -12,6 +12,7 @@ model Chain {
   name        String?
   description String?
   chainLength Int     @default(0)
+  isMain      Boolean @default(false)
 
   steps     Step[]
   instances ChainInstance[]

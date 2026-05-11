@@ -5,9 +5,9 @@ import Step from '../types/Step';
 
 export class Blueprint {
     /**
-     * 构建图纸 tree：一次性拉取整条链、所有节点，并且【预加载】子流程结构！拒绝 N+1 循环查询！
+     * 构建图纸 tree：一次性拉取整条链、所有节点
      */
-    static async load<U = any>(templateId: string, prismaClient = prisma): Promise<Chain<U>> {
+    static async load<U = any>(templateId: string, prismaClient: any = prisma): Promise<Chain<U>> {
         const chainData = await prismaClient.chain.findUnique({
             where: { id: templateId },
             include: {
@@ -29,19 +29,16 @@ export class Blueprint {
     }
 
     /**
-     * 将在内存中画好、改好的图纸持久化到数据库
-     * 采用递归保存策略，支持深层嵌套子流程
+     * 持久化到数据库
      */
-    static async save(chain: Chain<any>, prismaClient = prisma): Promise<void> {
-        await prismaClient.$transaction(async (tx) => {
-            // 1. 保存当前链的元数据
+    static async save(chain: Chain<any>, prismaClient: any = prisma): Promise<void> {
+        await prismaClient.$transaction(async (tx: any) => {
             await tx.chain.upsert({
                 where: { id: chain.template.id },
                 create: chain.template,
                 update: chain.template
             });
 
-            // 2. 清理：删除那些已经不在内存数组里的数据库步骤 (物理删除)
             const currentStepIds = chain.steps.map(s => s.template.id);
             await tx.step.deleteMany({
                 where: {
@@ -50,14 +47,10 @@ export class Blueprint {
                 }
             });
 
-            // 3. 递归保存每个步骤
             for (const s of chain.steps) {
-                // 如果步骤有关联的子流程图纸，先递归保存子流程
-                // 注意：只有当 s.subChain 被明确加载（非 undefined）或被清空（null）时才处理
                 if (s.subChain !== undefined) {
                     if (s.subChain) {
-                        await this.save(s.subChain, tx as any);
-                        // 确保步骤模板里的子流程 ID 也是最新的
+                        await this.save(s.subChain, tx);
                         s.template.subChainId = s.subChain.template.id;
                     } else {
                         s.template.subChainId = null;
@@ -75,17 +68,20 @@ export class Blueprint {
     }
 
     /**
-     * 查询所有模板列表 (带分页)
+     * 查询所有主模板列表
      */
-    static async findAll(page = 1, pageSize = 10, prismaClient = prisma) {
+    static async findMainTemplates(page = 1, pageSize = 10, prismaClient: any = prisma) {
         const skip = (page - 1) * pageSize;
         const [items, total] = await Promise.all([
             prismaClient.chain.findMany({
+                where: { isMain: true },
                 skip,
                 take: pageSize,
                 orderBy: { updatedAt: 'desc' }
             }),
-            prismaClient.chain.count()
+            prismaClient.chain.count({
+                where: { isMain: true }
+            })
         ]);
 
         return { items, total };
@@ -94,16 +90,14 @@ export class Blueprint {
     /**
      * 实例化一个模板
      */
-    static async instantiate(templateId: string, prismaClient = prisma) {
-        return await prismaClient.$transaction(async (tx) => {
-            // 1. 获取模板数据
+    static async instantiate(templateId: string, prismaClient: any = prisma) {
+        return await prismaClient.$transaction(async (tx: any) => {
             const template = await tx.chain.findUnique({
                 where: { id: templateId },
                 include: { steps: { orderBy: { sortOrder: 'asc' } } }
             });
             if (!template) throw new Error("模板不存在");
 
-            // 2. 创建工作流实例
             const instance = await tx.chainInstance.create({
                 data: {
                     templateId: template.id,
@@ -111,10 +105,9 @@ export class Blueprint {
                 }
             });
 
-            // 3. 创建步骤实例（打快照）
             if (template.steps.length > 0) {
                 await tx.stepInstance.createMany({
-                    data: template.steps.map(s => ({
+                    data: template.steps.map((s: any) => ({
                         stepId: s.id,
                         chainInstanceId: instance.id,
                         sortOrder: s.sortOrder,
@@ -125,5 +118,37 @@ export class Blueprint {
 
             return instance;
         });
+    }
+
+    /**
+     * 深度加载：一次性递归拉取整棵树的所有子流程
+     */
+    static async loadDeep<U = any>(templateId: string, prismaClient: any = prisma): Promise<Chain<U>> {
+        const chainData = await prismaClient.chain.findUnique({
+            where: { id: templateId },
+            include: {
+                steps: {
+                    orderBy: { sortOrder: 'asc' },
+                }
+            },
+        });
+        if (!chainData) throw new Error(`找不到模板 ${templateId}`);
+
+        const { steps, ...props } = chainData;
+        const chain = new Chain<U>(props);
+
+        if (steps && steps.length > 0) {
+            const loadedSteps = await Promise.all(steps.map(async (sData: any) => {
+                const step = new Step<U>(sData);
+                if (sData.subChainId) {
+                    // 递归调用
+                    step.subChain = await Blueprint.loadDeep(sData.subChainId, prismaClient);
+                }
+                return step;
+            }));
+            chain.steps = loadedSteps;
+            chain.buildChain(true);
+        }
+        return chain;
     }
 }

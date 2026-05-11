@@ -16,6 +16,7 @@ export default class Chain<T = any> {
       name: template?.name ?? null,
       description: template?.description ?? null,
       chainLength: template?.chainLength ?? 0,
+      isMain: template?.isMain ?? false,
       createdAt: template?.createdAt ?? new Date(),
       updatedAt: template?.updatedAt ?? new Date(),
     };

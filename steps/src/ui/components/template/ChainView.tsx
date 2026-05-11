@@ -47,6 +47,7 @@ export function StepItem({
       name: `${step.name} 的子流程`,
       description: null,
       chainLength: 0,
+      isMain: false,
       createdAt: new Date(),
       updatedAt: new Date(),
       steps: [],
@@ -85,7 +86,7 @@ export function StepItem({
     <div className="group">
       <div className="relative overflow-hidden rounded-2xl">
         <DeleteAction offsetX={offsetX} onDelete={onDelete} />
-        
+
         <StepCard
           offsetX={offsetX}
           isSwiping={isSwiping}
