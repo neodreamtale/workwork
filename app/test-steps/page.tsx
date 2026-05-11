@@ -1,4 +1,4 @@
-import { WorkflowDesigner } from '../../steps/src/ui/Designer';
+import { WorkflowDesigner } from '../../steps/src/ui/components/template/Designer';
 
 export default function TestStepsPage() {
     return (

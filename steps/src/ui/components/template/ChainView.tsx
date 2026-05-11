@@ -2,10 +2,10 @@
 
 import React, { useState } from "react";
 import { Plus, Layers, Trash2, ListTree } from "lucide-react";
-import { WorkflowChain, WorkflowStep } from "../types";
-import { useDragScroll } from "../hooks/useDragScroll";
-import { useSwipe } from "../hooks/useSwipe";
-import { fetchTemplate } from "../actions";
+import { WorkflowChain, WorkflowStep } from "../../types";
+import { useDragScroll } from "../../hooks/useDragScroll";
+import { useSwipe } from "../../hooks/useSwipe";
+import { fetchTemplate } from "../../actions";
 import { AddStep } from "./AddStepButton";
 import { DeleteAction } from "./DeleteAction";
 import { StepCard } from "./StepCard";

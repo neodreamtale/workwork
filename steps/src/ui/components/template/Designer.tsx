@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { fetchTemplate, saveTemplate } from "./actions";
-import { WorkflowChain } from "./types";
-import { ChainView } from "./components/ChainView";
+import { fetchTemplate, saveTemplate } from "../../actions";
+import { WorkflowChain } from "../../types";
+import { ChainView } from "./ChainView";
 import { Layers, Save, Loader2 } from "lucide-react";
 
 interface DesignerProps {
