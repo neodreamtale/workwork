@@ -50,10 +50,10 @@ export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
     return (
         <div className="max-w-4xl mx-auto p-6 bg-slate-50 min-h-screen">
             {/* 顶部全局工具栏 */}
-            <div className="flex items-center justify-between mb-8 bg-white p-4 rounded-2xl shadow-sm border border-slate-100 sticky top-0 z-50 backdrop-blur-md bg-white/80">
-                <div>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8 bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-slate-100 sticky top-0 z-50 backdrop-blur-md bg-white/80">
+                <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                        <Layers className="text-blue-500" />
+                        <Layers className="text-blue-500 shrink-0" />
                         <input
                             type="text"
                             value={rootChain.name || ""}
@@ -61,27 +61,29 @@ export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
                                 ...rootChain,
                                 name: e.target.value
                             })}
-                            className="text-xl font-bold text-slate-800 bg-transparent border-none focus:ring-2 focus:ring-blue-100 rounded-lg px-1 -ml-1 w-full placeholder:text-slate-300"
+                            className="text-lg md:text-xl font-bold text-slate-800 bg-transparent border-none focus:ring-2 focus:ring-blue-100 rounded-lg px-1 -ml-1 w-full placeholder:text-slate-300 truncate"
                             placeholder="点击设置模板名称..."
                         />
                     </div>
-                    <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
-                        <span className="font-mono text-slate-500">{rootChain.id}</span>
+                    <div className="flex items-center gap-1 text-[10px] md:text-xs text-slate-400 mt-1">
+                        <span className="font-mono bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                            ID: {rootChain.id}
+                        </span>
                     </div>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                     <button
                         onClick={handleSave}
                         disabled={saving}
-                        className="flex items-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-200 active:scale-95"
+                        className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-200 active:scale-95 text-sm"
                     >
                         {saving ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
                         ) : (
                             <Save className="w-4 h-4" />
                         )}
-                        {saving ? "正在保存..." : "保存模板"}
+                        <span>{saving ? "正在保存..." : "保存模板"}</span>
                     </button>
                 </div>
             </div>
