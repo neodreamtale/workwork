@@ -3,7 +3,7 @@ import type Chain from './Chain';
 
 export default class Step<T = any> {
     template: StepTemplate;
-    subChain?: Chain<T>; // 预加载的子流程蓝图
+    subChain?: Chain<T> | null; // 预加载的子流程蓝图
 
     constructor(template?: Partial<StepTemplate>) {
         this.template = {

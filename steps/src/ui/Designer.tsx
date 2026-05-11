@@ -14,13 +14,13 @@ interface DesignerProps {
  * 核心：工作流设计器主入口
  * 负责数据加载、根状态管理以及全局操作按钮
  */
-export function WorkflowDesigner({ chainId = "CHAIN_TEST_001" }: DesignerProps) {
+export function WorkflowDesigner({ chainId = "" }: DesignerProps) {
     const [rootChain, setRootChain] = useState<WorkflowChain | null>(null);
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
         // 初始化加载
-        fetchTemplate(chainId).then((data) => {
+        fetchTemplate("9cfce9cb-39bd-4e32-9c1c-9f25fa4a66e5").then((data) => {
             setRootChain(data as WorkflowChain);
         });
     }, [chainId]);
@@ -66,16 +66,7 @@ export function WorkflowDesigner({ chainId = "CHAIN_TEST_001" }: DesignerProps) 
                         />
                     </div>
                     <div className="flex items-center gap-1 text-xs text-slate-400 mt-1">
-                        <span className="shrink-0">ID:</span>
-                        <input
-                            type="text"
-                            value={rootChain.id}
-                            onChange={(e) => setRootChain({
-                                ...rootChain,
-                                id: e.target.value
-                            })}
-                            className="w-full bg-transparent border-none focus:ring-1 focus:ring-blue-100 rounded px-1 py-0 font-mono"
-                        />
+                        <span className="font-mono text-slate-500">{rootChain.id}</span>
                     </div>
                 </div>
 

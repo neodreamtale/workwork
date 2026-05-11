@@ -13,7 +13,8 @@ function toFlattenDTO(chain: any): WorkflowChain {
     ...chain.template,
     steps: (chain.steps || []).map((s: any) => ({
       ...s.template,
-      subChain: s.subChain ? toFlattenDTO(s.subChain) : null
+      // 核心：如果是 undefined 表示还没加载，要保留这个状态给前端
+      subChain: s.subChain === undefined ? undefined : (s.subChain ? toFlattenDTO(s.subChain) : null)
     }))
   };
   return dto as WorkflowChain;
@@ -49,8 +50,9 @@ function fromFlattenDTO(data: WorkflowChain): Chain {
     };
 
     const stepInstance = new Step(stepFields);
-    if (subChain) {
-      stepInstance.subChain = fromFlattenDTO(subChain as WorkflowChain);
+    // 只有当 subChain 存在或明确为 null 时才还原（undefined 表示没加载，不干预）
+    if (subChain !== undefined) {
+      stepInstance.subChain = subChain ? fromFlattenDTO(subChain as WorkflowChain) : null;
     }
     return stepInstance;
   });
@@ -64,11 +66,7 @@ export async function fetchTemplate(id: string): Promise<WorkflowChain> {
     return toFlattenDTO(chain);
   } catch (e) {
     console.error("查不到对应图纸，走 Mock 逻辑", e);
-    const dummyChain = new Chain({ id, name: "🚜 玉米种植全自动流水线" });
-    const s1 = new Step({ id: "STEP_1", name: "选种与购买" });
-    const s2 = new Step({ id: "STEP_2", name: "松土施底肥" });
-    dummyChain.newStep(s1).newStep(s2);
-
+    const dummyChain = new Chain({ id: id || undefined, name: "新工作流模板" });
     return toFlattenDTO(dummyChain);
   }
 }

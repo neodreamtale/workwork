@@ -7,11 +7,14 @@ import {
   Plus,
   GripVertical,
   Layers,
-  Trash2
+  Trash2,
+  Loader2,
+  ListTree
 } from "lucide-react";
 import { WorkflowChain, WorkflowStep } from "../types";
 import { useDragScroll } from "../hooks/useDragScroll";
 import { useSwipe } from "../hooks/useSwipe";
+import { fetchTemplate } from "../actions";
 
 interface StepItemProps {
   step: WorkflowStep;
@@ -43,19 +46,18 @@ export function StepItem({
     handleTouchEnd
   } = useSwipe({ limit: 80 });
 
-  const toggleSubChain = () => {
-    if (!step.subChain) {
-      const newSubChain: WorkflowChain = {
-        id: `CHAIN_${Math.random().toString(36).substr(2, 9)}`,
-        name: `${step.name} 的子流程`,
-        description: null,
-        chainLength: 0,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        steps: [],
-      };
-      onUpdateStep({ ...step, subChain: newSubChain });
-    }
+  const createSubChain = () => {
+    if (step.subChainId || step.subChain) return;
+    const newSubChain: WorkflowChain = {
+      id: `CHAIN_${Math.random().toString(36).substr(2, 9)}`,
+      name: `${step.name} 的子流程`,
+      description: null,
+      chainLength: 0,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      steps: [],
+    };
+    onUpdateStep({ ...step, subChain: newSubChain });
   };
 
   return (
@@ -85,7 +87,7 @@ export function StepItem({
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
           onMouseDown={(e) => {
-            if ((e.target as HTMLElement).closest(".cursor-grab")) return;
+            if ((e.target as HTMLElement).closest(".cursor-grab") || (e.target as HTMLElement).closest("button") || (e.target as HTMLElement).closest("input")) return;
             handleTouchStart(e);
           }}
           onMouseMove={handleTouchMove}
@@ -113,11 +115,8 @@ export function StepItem({
               className="w-full bg-transparent border-none focus:ring-0 font-medium text-slate-700 pointer-events-auto"
             />
             <div className="flex items-center gap-4 mt-1">
-              <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded font-mono uppercase">
-                Level {level} · Index {index}
-              </span>
-              {step.subChain && (
-                <span className="text-[10px] text-blue-500 font-bold flex items-center gap-0.5 uppercase">
+              {(step.subChainId || step.subChain) && (
+                <span className="text-[10px] text-blue-500/60 font-bold flex items-center gap-0.5 uppercase">
                   <Layers size={10} /> 包含子流程
                 </span>
               )}
@@ -125,25 +124,42 @@ export function StepItem({
           </div>
 
           <div className="flex items-center gap-1">
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleSubChain();
-              }}
-              className={`p-2 rounded-lg transition-colors ${step.subChain ? "text-blue-500 bg-blue-50" : "text-slate-400 hover:bg-slate-100"}`}
-            >
-              <Layers size={16} />
-            </button>
+            {!step.subChainId && !step.subChain ? (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  createSubChain();
+                }}
+                title="添加子流程"
+                className="p-2 rounded-lg text-slate-400 hover:bg-blue-50 hover:text-blue-500 transition-colors"
+              >
+                <ListTree size={16} />
+              </button>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirm("确定要移除与子流程的关联吗？")) {
+                    onUpdateStep({ ...step, subChain: null, subChainId: null });
+                  }
+                }}
+                title="移除子流程关联"
+                className="p-2 rounded-lg text-red-300 hover:bg-red-50 hover:text-red-500 transition-colors"
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {step.subChain && (
+      {(step.subChain || step.subChainId) && (
         <ChainView
           chain={step.subChain}
+          subChainId={step.subChainId}
           level={level + 1}
           onUpdate={(newSubChain) => onUpdateStep({ ...step, subChain: newSubChain })}
-          onDelete={() => onUpdateStep({ ...step, subChain: null })}
+          onDelete={() => onUpdateStep({ ...step, subChain: null, subChainId: null })}
         />
       )}
     </div>
@@ -151,16 +167,17 @@ export function StepItem({
 }
 
 interface ChainViewProps {
-  chain: WorkflowChain;
+  chain?: WorkflowChain | null;
+  subChainId?: string | null;
   level: number;
   onUpdate: (c: WorkflowChain) => void;
   onDelete?: () => void;
 }
 
-export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) {
-  const [isExpanded, setIsExpanded] = useState(true);
+export function ChainView({ chain, subChainId, level, onUpdate, onDelete }: ChainViewProps) {
+  const [isExpanded, setIsExpanded] = useState(level === 0);
+  const [isLoading, setIsLoading] = useState(false);
 
-  // --- 使用抽离的 Swipe 逻辑 (用于子流程头) ---
   const {
     offsetX,
     isSwiping,
@@ -169,17 +186,40 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
     handleTouchEnd
   } = useSwipe({ limit: 80 });
 
-  // --- 使用抽离的拖拽和自动滚动逻辑 ---
   const {
     handleDragStart,
     handleDragOver,
     handleDragEnd
   } = useDragScroll({
-    items: chain.steps,
-    onReorder: (newSteps) => onUpdate({ ...chain, steps: newSteps })
+    items: chain?.steps || [],
+    onReorder: (newSteps) => chain && onUpdate({ ...chain, steps: newSteps })
   });
 
+  const handleToggle = async () => {
+    if (isExpanded) {
+      setIsExpanded(false);
+      return;
+    }
+
+    // 懒加载逻辑：由子流程组件内部控制
+    if (!chain && subChainId && !isLoading) {
+      setIsLoading(true);
+      try {
+        const data = await fetchTemplate(subChainId);
+        onUpdate(data);
+      } catch (e) {
+        console.error("加载子流程失败", e);
+        alert("加载子流程失败");
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    setIsExpanded(true);
+  };
+
   const addStep = () => {
+    if (!chain) return;
     const newStep: WorkflowStep = {
       id: `STEP_${Math.random().toString(36).substr(2, 9)}`,
       name: "新步骤",
@@ -228,17 +268,25 @@ export function ChainView({ chain, level, onUpdate, onDelete }: ChainViewProps) 
             }}
             className="relative bg-slate-50 flex items-center gap-2 p-1 z-10 cursor-default select-none"
           >
-            <button onClick={() => setIsExpanded(!isExpanded)} className="p-1 hover:bg-slate-200 rounded transition-colors text-slate-500">
-              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            <button
+              onClick={handleToggle}
+              disabled={isLoading}
+              className="p-1 hover:bg-slate-200 rounded transition-colors text-slate-500"
+            >
+              {isLoading ? (
+                <Loader2 size={14} className="animate-spin text-blue-500" />
+              ) : (
+                isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />
+              )}
             </button>
             <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              子流程: {chain.name || "未命名"}
+              子流程: {chain?.name || (subChainId ? "待加载..." : "未命名")}
             </span>
           </div>
         </div>
       )}
 
-      {isExpanded && (
+      {isExpanded && chain && (
         <div className="space-y-3">
           {chain.steps.map((step, index) => (
             <StepItem

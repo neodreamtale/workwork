@@ -13,15 +13,6 @@ export class Blueprint {
             include: {
                 steps: {
                     orderBy: { sortOrder: 'asc' },
-                    include: {
-                        subChain: {
-                            include: {
-                                steps: {
-                                    orderBy: { sortOrder: 'asc' }
-                                }
-                            }
-                        }
-                    }
                 }
             },
         });
@@ -30,23 +21,8 @@ export class Blueprint {
         const { steps, ...templateProps } = chainData;
         const c = new Chain<U>(templateProps);
 
-        // 同步装配节点，拒绝发额外 SQL
         if (steps) {
-            c.steps = steps.map((sData: any) => {
-                const { subChain, ...stepProps } = sData;
-                const step = new Step<U>(stepProps);
-
-                // 如果存在嵌套子流程，直接拿刚才查好的数据在内存里拼装
-                if (subChain) {
-                    const subC = new Chain<U>(subChain);
-                    if (subChain.steps) {
-                        subC.steps = subChain.steps.map((ss: any) => new Step<U>(ss));
-                        subC.buildChain(true);
-                    }
-                    step.subChain = subC;
-                }
-                return step;
-            });
+            c.steps = steps.map((sData: any) => new Step<U>(sData));
             c.buildChain(true);
         }
         return c;
@@ -77,12 +53,15 @@ export class Blueprint {
             // 3. 递归保存每个步骤
             for (const s of chain.steps) {
                 // 如果步骤有关联的子流程图纸，先递归保存子流程
-                if (s.subChain) {
-                    await this.save(s.subChain, tx as any);
-                    // 确保步骤模板里的子流程 ID 也是最新的
-                    s.template.subChainId = s.subChain.template.id;
-                } else {
-                    s.template.subChainId = null;
+                // 注意：只有当 s.subChain 被明确加载（非 undefined）或被清空（null）时才处理
+                if (s.subChain !== undefined) {
+                    if (s.subChain) {
+                        await this.save(s.subChain, tx as any);
+                        // 确保步骤模板里的子流程 ID 也是最新的
+                        s.template.subChainId = s.subChain.template.id;
+                    } else {
+                        s.template.subChainId = null;
+                    }
                 }
 
                 s.template.chainId = chain.template.id;
