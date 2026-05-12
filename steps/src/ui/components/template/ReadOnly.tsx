@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { ChevronDown, ChevronRight, Loader2, CheckCircle2, Circle, Clock } from "lucide-react";
-import { WorkflowChain, WorkflowStep } from "../../types";
+import { WorkflowChain, WorkflowStep } from "../../../types/WorkFlow";
 import { fetchTemplate } from "../../actions";
 
 interface ReadOnlyProps {

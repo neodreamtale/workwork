@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { fetchTemplate, saveTemplate } from "../../actions";
-import { WorkflowChain } from "../../types";
+import { WorkflowChain } from "../../../types/WorkFlow";
 import { ChainView } from "./ChainView";
 import { Layers, Save, Loader2 } from "lucide-react";
 

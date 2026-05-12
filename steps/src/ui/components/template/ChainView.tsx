@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Plus, Layers, Trash2, ListTree } from "lucide-react";
-import { WorkflowChain, WorkflowStep } from "../../types";
+import { WorkflowChain, WorkflowStep } from "../../../types/WorkFlow";
 import { useDragScroll } from "../../hooks/useDragScroll";
 import { useSwipe } from "../../hooks/useSwipe";
 import { fetchTemplate } from "../../actions";

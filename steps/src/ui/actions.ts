@@ -2,8 +2,9 @@
 
 import { Blueprint } from '../workflow/Blueprint';
 import Chain from '../types/Chain';
-import { WorkflowChain } from './types';
+import { WorkflowChain } from '../types/WorkFlow';
 import { toFlattenDTO, fromFlattenDTO } from './utils';
+import { getWorkflowEngine } from '../workflow/engine/instance';
 
 export async function fetchTemplate(id: string): Promise<WorkflowChain> {
   try {
@@ -35,4 +36,9 @@ export async function createInstance(templateId: string) {
 export async function fetchTemplateDeep(id: string): Promise<WorkflowChain> {
   const chain = await Blueprint.loadDeep(id);
   return toFlattenDTO(chain);
+}
+
+export async function runInstanceNext(instanceId: string) {
+  const engine = getWorkflowEngine();
+  return await engine.executeNext(instanceId);
 }

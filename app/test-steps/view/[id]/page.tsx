@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { ReadOnlyWorkflow } from '../../../../steps/src/ui/components/template/ReadOnly';
 import { ArrowLeft, Loader2, Info } from 'lucide-react';
-import { WorkflowChain } from '../../../../steps/src/ui/types';
+import { WorkflowChain } from '../../../../steps/src/types/WorkFlow';
 
 export default function ViewPage() {
     const params = useParams();

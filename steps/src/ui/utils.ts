@@ -1,6 +1,6 @@
 import Chain from '../types/Chain';
 import Step from '../types/Step';
-import { WorkflowChain, WorkflowStep } from './types';
+import { WorkflowChain, WorkflowStep } from '../types/WorkFlow';
 
 /**
  * 内部转换：将带有 .template 嵌套的类实例转换为扁平的 DTO 对象

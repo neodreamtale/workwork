@@ -1,22 +1,43 @@
-/**
- * 工作流生命周期状态 (ChainInstance)
- */
-export enum ChainStatus {
-  PENDING = 'PENDING',       // 未开始/待触发
-  RUNNING = 'RUNNING',       // 进行中
-  PAUSED = 'PAUSED',         // 已暂停/挂起
-  COMPLETED = 'COMPLETED',   // 已完成/成功
-  FAILED = 'FAILED',         // 已失败
-  CANCELLED = 'CANCELLED'    // 已取消/被驳回
-}
+import { Chain as ChainTemplate, Step as StepTemplate } from '../../generated/client';
 
 /**
- * 节点生命周期状态 (StepInstance)
+ * 扁平化的步骤类型：直接包含 Template 的所有字段 + 子流程
  */
-export enum StepStatus {
-  PENDING = 'PENDING',       // 未开始
-  RUNNING = 'RUNNING',       // 处理中
-  COMPLETED = 'COMPLETED',   // 已完成
-  FAILED = 'FAILED',         // 失败/异常
-  SKIPPED = 'SKIPPED'        // 已跳过
-}
+export type WorkflowStep = StepTemplate & {
+  /** 
+   * 子流程数据：
+   * - undefined: 尚未加载 (Lazy Load)
+   * - null: 没有关联子流程
+   * - WorkflowChain: 已加载的数据
+   */
+  subChain?: WorkflowChain | null;
+};
+
+/**
+ * 扁平化的流程链类型：直接包含 Template 的所有字段 + 步骤数组
+ */
+export type WorkflowChain = ChainTemplate & {
+  steps: WorkflowStep[];
+};
+
+/**
+ * 实例化的步骤类型
+ */
+export type InstanceStep = {
+  id: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  payload?: any;
+  step: {
+    name: string;
+  };
+};
+
+/**
+ * 实例化的流程链类型
+ */
+export type InstanceChain = {
+  id: string;
+  status: string;
+  templateId: string;
+  stepInstances: InstanceStep[];
+};
