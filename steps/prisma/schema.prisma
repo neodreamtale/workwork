@@ -32,9 +32,13 @@ model ChainInstance {
   chain      Chain  @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
   // 运行状态：PENDING(待触发), RUNNING(进行中), PAUSED(挂起), COMPLETED(完成), FAILED(失败), CANCELLED(取消)
-  status       String @default("PENDING")
+  status       String  @default("PENDING")
+  // 全局默认回调地址：如果步骤没有自己设置，将使用此地址
+  handlerUrl   String?
   // 整个流程运行期间产生的全局数据
   chainPayload Json?
+  // 错误信息池：Map<stepId, errorTip>
+  error        Json?
 
   // 该工作流包含的所有节点实例
   stepInstances StepInstance[] @relation("ChainToStep")
@@ -52,12 +56,17 @@ model ChainInstance {
 
 model Step {
   id        String  @id @default(ulid())
+  bizKey    String? // 业务主键，用于逻辑绑定 (例如: CALC_TAX)
   name      String?
   sortOrder Int     @default(0) // 排序序号
+  isAuto    Boolean @default(true) // 是否自动执行下一步
 
   // 归属的 Chain
   chainId String
   chain   Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
+
+  // 远程回调地址：如果配置了此项，执行时将向该地址发送 POST 请求
+  handlerUrl String?
 
   // 引用子流程关系 (如果这个步骤是要调起另一个工作流模板)
   subChainId String?
@@ -68,6 +77,7 @@ model Step {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@unique([bizKey, name])
   @@index([chainId])
   @@index([sortOrder])
 }
