@@ -1,7 +1,7 @@
 generator client {
   provider   = "prisma-client-js"
-  // output = "../generated/client"
-  engineType = "binary"
+  output     = "../generated/client"
+  engineType = "library"
 }
 
 datasource db {
@@ -18,7 +18,6 @@ model Chain {
   steps     Step[]
   instances ChainInstance[]
 
-  // 反向关联：这个模板被哪些步骤作为“子流程”引用了
   usedBySteps Step[] @relation("childChain")
 
   createdAt DateTime @default(now())
@@ -28,23 +27,16 @@ model Chain {
 model ChainInstance {
   id String @id @default(ulid())
 
-  // 它是根据哪个模板创建�?
   templateId String
   chain      Chain  @relation(fields: [templateId], references: [id], onDelete: Cascade)
 
-  // 运行状态：PENDING(待触�?, RUNNING(进行�?, PAUSED(挂起), COMPLETED(完成), FAILED(失败), CANCELLED(取消)
   status       String  @default("PENDING")
-  // 全局默认回调地址：如果步骤没有自己设置，将使用此地址
   handlerUrl   String?
-  // 整个流程运行期间产生的全局数据
   chainPayload Json?
-  // 错误信息池：Map<stepId, errorTip>
   error        Json?
 
-  // 该工作流包含的所有节点实�?
   stepInstances StepInstance[] @relation("ChainToStep")
 
-  // 【新增：双向指针】如果这是个子流程实例，它是由哪个父节点实例派生出来�?
   parentStepInstanceId String?
   parentStepInstance   StepInstance? @relation("SubChainRelation", fields: [parentStepInstanceId], references: [id], onDelete: Cascade)
 
@@ -57,19 +49,16 @@ model ChainInstance {
 
 model Step {
   id        String  @id @default(ulid())
-  bizKey    String? // 业务主键，用于逻辑绑定 (例如: CALC_TAX)
+  bizKey    String? 
   name      String?
-  sortOrder Int     @default(0) // 排序序号
-  isAuto    Boolean @default(true) // 是否自动执行下一�?
+  sortOrder Int     @default(0) 
+  isAuto    Boolean @default(true) 
 
-  // 归属�?Chain
   chainId String
   chain   Chain  @relation(fields: [chainId], references: [id], onDelete: Cascade)
 
-  // 远程回调地址：如果配置了此项，执行时将向该地址发�?POST 请求
   handlerUrl String?
 
-  // 引用子流程关�?(如果这个步骤是要调起另一个工作流模板)
   subChainId String?
   subChain   Chain?  @relation("childChain", fields: [subChainId], references: [id])
 
@@ -85,22 +74,18 @@ model Step {
 
 model StepInstance {
   id        String @id @default(ulid())
-  sortOrder Int    @default(0) // 快照当时的序�?
+  sortOrder Int    @default(0) 
 
   stepId String
   step   Step   @relation(fields: [stepId], references: [id])
 
-  // 归属的工作流实例
   chainInstanceId String
   chainInstance   ChainInstance @relation("ChainToStep", fields: [chainInstanceId], references: [id], onDelete: Cascade)
 
-  // 【新增：双向指针的反向关系】作为父节点，派生出的子流程实例�?
   childChainInstances ChainInstance[] @relation("SubChainRelation")
 
-  // 该步骤的执行状态：PENDING(未开�?, READY(待认�?, RUNNING(处理�?, COMPLETED(完成), FAILED(异常), SKIPPED(跳过)
   status String @default("PENDING")
 
-  // 业务数据
   payload Json?
 
   createdAt DateTime @default(now())

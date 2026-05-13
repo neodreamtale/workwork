@@ -1,43 +1,53 @@
-import { Chain as ChainTemplate, Step as StepTemplate } from '../../generated/client';
-
 /**
- * 扁平化的步骤类型：直接包含 Template 的所有字段 + 子流程
+ * 基础模板步骤类型
  */
-export type WorkflowStep = StepTemplate & {
-  /** 
-   * 子流程数据：
-   * - undefined: 尚未加载 (Lazy Load)
-   * - null: 没有关联子流程
-   * - WorkflowChain: 已加载的数据
-   */
-  subChain?: WorkflowChain | null;
+export type WorkflowStep = {
+  id: string;
+  bizKey: string | null;
+  name: string | null;
+  sortOrder: number;
+  isAuto: boolean;
+  handlerUrl: string | null;
+  subChainId: string | null;
 };
 
 /**
- * 扁平化的流程链类型：直接包含 Template 的所有字段 + 步骤数组
+ * 基础模板链类型
  */
-export type WorkflowChain = ChainTemplate & {
+export type WorkflowChain = {
+  id: string;
+  name: string | null;
+  description: string | null;
   steps: WorkflowStep[];
 };
 
 /**
- * 实例化的步骤类型
+ * 实例化的步骤类型 (对应数据库 StepInstance)
  */
 export type InstanceStep = {
   id: string;
-  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED';
+  stepId: string;
+  status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'READY' | 'SKIPPED';
   payload?: any;
+  sortOrder: number;
   step: {
-    name: string;
+    id: string;
+    bizKey: string | null;
+    name: string | null;
+    handlerUrl: string | null;
+    isAuto: boolean;
   };
 };
 
 /**
- * 实例化的流程链类型
+ * 实例化的流程链类型 (对应数据库 ChainInstance)
  */
 export type InstanceChain = {
   id: string;
-  status: string;
   templateId: string;
-  stepInstances: InstanceStep[];
+  status: string;
+  handlerUrl: string | null;
+  chainPayload: any;
+  parentStepInstanceId: string | null;
+  stepInstances?: InstanceStep[];
 };

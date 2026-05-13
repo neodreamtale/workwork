@@ -2,8 +2,12 @@ import prisma from '../../lib/db';
 import { Executor } from '../engine/Executor';
 import { AutoRunner } from '../runner/AutoRunner';
 import { ManualRunner } from '../runner/ManualRunner';
+import { InstanceChain, WorkflowStep } from '../../types/WorkFlow';
 
 export type RunMode = 'AUTO' | 'MANUAL';
+
+// 解决 TS 实例化过深的问题：将数据库实例内部视为 any
+const db = prisma as any;
 
 /**
  * Winch (绞盘)：工作流引擎的调度中心与门面
@@ -51,7 +55,7 @@ export class Winch {
    * 绞盘清扫：批量恢复所有处于活跃状态的任务
    */
   async resumeAllActive(mode: RunMode = 'AUTO') {
-    const activeInstances = await prisma.chainInstance.findMany({
+    const activeInstances: any[] = await db.chainInstance.findMany({
       where: { 
         status: { in: ['PENDING', 'RUNNING'] } 
       },
@@ -72,15 +76,21 @@ export class Winch {
   /**
    * 将一个 Chain 模板实例化 (内部逻辑)
    */
-  private async createInstance(chainId: string, initialData: any = {}, parentStepInstanceId?: string) {
-    const template = await prisma.chain.findUnique({
+  private async createInstance(chainId: string, initialData: any = {}, parentStepInstanceId?: string): Promise<InstanceChain> {
+    // 拆分查询以防止类型深度报错，并手动指定返回类型
+    const template: any = await db.chain.findUnique({
       where: { id: chainId },
-      include: { steps: { orderBy: { sortOrder: 'asc' } } }
+      select: { id: true }
     });
 
     if (!template) throw new Error(`找不到工作流模板: ${chainId}`);
 
-    const instance = await prisma.chainInstance.create({
+    const steps: WorkflowStep[] = await db.step.findMany({
+      where: { chainId },
+      orderBy: { sortOrder: 'asc' }
+    });
+
+    const instanceData = await db.chainInstance.create({
       data: {
         chain: { connect: { id: template.id } },
         status: 'PENDING',
@@ -88,9 +98,11 @@ export class Winch {
         ...(parentStepInstanceId ? { parentStepInstance: { connect: { id: parentStepInstanceId } } } : {})
       }
     });
+    
+    const instance = instanceData as InstanceChain;
 
-    for (const step of template.steps) {
-      const sInstance = await prisma.stepInstance.create({
+    for (const step of steps) {
+      const sInstanceData = await db.stepInstance.create({
         data: {
           chainInstance: { connect: { id: instance.id } },
           step: { connect: { id: step.id } },
@@ -100,7 +112,7 @@ export class Winch {
       });
 
       if (step.subChainId) {
-        await this.createInstance(step.subChainId, initialData, sInstance.id);
+        await this.createInstance(step.subChainId, initialData, sInstanceData.id);
       }
     }
 

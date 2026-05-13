@@ -1,4 +1,5 @@
 import prisma from '../../lib/db';
+import { InstanceChain, InstanceStep } from '../../types/WorkFlow';
 
 export type StepHandler = (
   input: Record<string, any>
@@ -12,37 +13,49 @@ export interface ExecutionResult {
 
 // ========================================================================
 // 数据库操作隔离层 (Database Access Layer)
-// 通过将查询移出类，并使用 any 强制隔离，彻底解决 TS 实例化过深的问题。
+// 通过显式指定自定义接口类型，既解决了 TS 实例化过深问题，又找回了类型约束。
 // ========================================================================
 const db = prisma as any;
 
-async function db_getInstance(id: string) {
-  return await db.chainInstance.findUnique({
+async function db_getInstance(id: string): Promise<InstanceChain | null> {
+  const data = await db.chainInstance.findUnique({
     where: { id },
-    select: { id: true, chainPayload: true, handlerUrl: true, parentStepInstanceId: true, status: true }
+    select: {
+      id: true,
+      templateId: true,
+      chainPayload: true,
+      handlerUrl: true,
+      parentStepInstanceId: true,
+      status: true
+    }
   });
+  return data as InstanceChain | null;
 }
 
-async function db_getPendingStep(instanceId: string) {
-  return await db.stepInstance.findMany({
+async function db_getPendingStep(instanceId: string): Promise<InstanceStep[]> {
+  const data = await db.stepInstance.findMany({
     where: { chainInstanceId: instanceId, status: 'PENDING' },
     orderBy: { sortOrder: 'asc' },
     take: 2,
     select: {
       id: true,
       stepId: true,
+      status: true,
+      sortOrder: true,
       step: {
         select: { id: true, bizKey: true, name: true, handlerUrl: true, isAuto: true }
       }
     }
   });
+  return data as InstanceStep[];
 }
 
-async function db_getSubChain(parentStepId: string) {
-  return await db.chainInstance.findFirst({
+async function db_getSubChain(parentStepId: string): Promise<InstanceChain | null> {
+  const data = await db.chainInstance.findFirst({
     where: { parentStepInstanceId: parentStepId },
     select: { id: true, status: true }
   });
+  return data as InstanceChain | null;
 }
 
 // ========================================================================
@@ -56,10 +69,10 @@ export class Executor {
   }
 
   async executeNext(instanceId: string): Promise<ExecutionResult> {
-    const instance: any = await db_getInstance(instanceId);
+    const instance = await db_getInstance(instanceId);
     if (!instance) throw new Error(`找不到实例: ${instanceId}`);
 
-    const sInstances: any[] = await db_getPendingStep(instanceId);
+    const sInstances = await db_getPendingStep(instanceId);
 
     if (sInstances.length === 0) {
       await db.chainInstance.update({ where: { id: instanceId }, data: { status: 'COMPLETED' } });
@@ -67,7 +80,7 @@ export class Executor {
     }
 
     const sInstance = sInstances[0];
-    const subChainInstance: any = await db_getSubChain(sInstance.id);
+    const subChainInstance = await db_getSubChain(sInstance.id);
 
     if (subChainInstance && subChainInstance.status !== 'COMPLETED') {
       const subRes = await this.executeNext(subChainInstance.id);
@@ -182,11 +195,11 @@ export class Executor {
   }
 
   async peekNextStep(instanceId: string): Promise<any> {
-    const nextSteps: any[] = await db_getPendingStep(instanceId);
+    const nextSteps = await db_getPendingStep(instanceId);
     const sInstance = nextSteps[0];
     if (!sInstance) return null;
 
-    const subChainInstance: any = await db_getSubChain(sInstance.id);
+    const subChainInstance = await db_getSubChain(sInstance.id);
 
     if (subChainInstance && subChainInstance.status !== 'COMPLETED') {
       const nextSubStep = await this.peekNextStep(subChainInstance.id);
@@ -200,7 +213,7 @@ export class Executor {
   }
 
   private async getAncestorsData(instanceId: string): Promise<Record<string, any>> {
-    const instance: any = await db_getInstance(instanceId);
+    const instance = await db_getInstance(instanceId);
     if (!instance) return {};
 
     let currentData = (instance.chainPayload as Record<string, any>) || {};
@@ -219,7 +232,7 @@ export class Executor {
   }
 
   private async getRootChainInstance(instanceId: string): Promise<any> {
-    const instance: any = await db_getInstance(instanceId);
+    const instance = await db_getInstance(instanceId);
     if (!instance) throw new Error(`找不到实例: ${instanceId}`);
     if (!instance.parentStepInstanceId) return instance;
 
