@@ -10,6 +10,44 @@ export interface ExecutionResult {
   reason?: string;
 }
 
+// ========================================================================
+// 数据库操作隔离层 (Database Access Layer)
+// 通过将查询移出类，并使用 any 强制隔离，彻底解决 TS 实例化过深的问题。
+// ========================================================================
+const db = prisma as any;
+
+async function db_getInstance(id: string) {
+  return await db.chainInstance.findUnique({
+    where: { id },
+    select: { id: true, chainPayload: true, handlerUrl: true, parentStepInstanceId: true, status: true }
+  });
+}
+
+async function db_getPendingStep(instanceId: string) {
+  return await db.stepInstance.findMany({
+    where: { chainInstanceId: instanceId, status: 'PENDING' },
+    orderBy: { sortOrder: 'asc' },
+    take: 2,
+    select: {
+      id: true,
+      stepId: true,
+      step: {
+        select: { id: true, bizKey: true, name: true, handlerUrl: true, isAuto: true }
+      }
+    }
+  });
+}
+
+async function db_getSubChain(parentStepId: string) {
+  return await db.chainInstance.findFirst({
+    where: { parentStepInstanceId: parentStepId },
+    select: { id: true, status: true }
+  });
+}
+
+// ========================================================================
+// 执行器类 (Executor)
+// ========================================================================
 export class Executor {
   private handlers: Record<string, StepHandler> = {};
 
@@ -18,71 +56,36 @@ export class Executor {
   }
 
   async executeNext(instanceId: string): Promise<ExecutionResult> {
-    // 使用 select 代替 include，通过显式指定字段来降低 TS 类型推导深度
-    const instance = await prisma.chainInstance.findUnique({
-      where: { id: instanceId },
-      select: {
-        id: true,
-        chainPayload: true,
-        handlerUrl: true,
-        parentStepInstanceId: true,
-        status: true,
-        stepInstances: {
-          where: { status: 'PENDING' },
-          orderBy: { sortOrder: 'asc' },
-          take: 1,
-          select: {
-            id: true,
-            stepId: true,
-            step: {
-              select: {
-                id: true,
-                bizKey: true,
-                name: true,
-                handlerUrl: true
-              }
-            }
-          }
-        }
-      }
-    });
-
+    const instance: any = await db_getInstance(instanceId);
     if (!instance) throw new Error(`找不到实例: ${instanceId}`);
 
-    if (instance.stepInstances.length === 0) {
-      await prisma.chainInstance.update({
-        where: { id: instanceId },
-        data: { status: 'COMPLETED' }
-      });
+    const sInstances: any[] = await db_getPendingStep(instanceId);
+
+    if (sInstances.length === 0) {
+      await db.chainInstance.update({ where: { id: instanceId }, data: { status: 'COMPLETED' } });
       return { status: 'FINISHED' };
     }
 
-    const sInstance = instance.stepInstances[0];
-    const subChainInstance = await prisma.chainInstance.findFirst({
-      where: { parentStepInstanceId: sInstance.id },
-      select: { id: true, status: true } // 同样使用 select
-    });
+    const sInstance = sInstances[0];
+    const subChainInstance: any = await db_getSubChain(sInstance.id);
 
     if (subChainInstance && subChainInstance.status !== 'COMPLETED') {
       const subRes = await this.executeNext(subChainInstance.id);
-      
+
       if (subRes.status === 'FINISHED') {
-        const finishedSub = await prisma.chainInstance.findUnique({
+        const finishedSub: any = await db.chainInstance.findUnique({
           where: { id: subChainInstance.id },
           select: { chainPayload: true }
         });
 
-        await prisma.stepInstance.update({
-          where: { id: sInstance.id },
-          data: { status: 'COMPLETED' }
-        });
+        await db.stepInstance.update({ where: { id: sInstance.id }, data: { status: 'COMPLETED' } });
 
-        await prisma.chainInstance.update({
+        await db.chainInstance.update({
           where: { id: instanceId },
           data: {
             chainPayload: {
-              ...(instance.chainPayload as Record<string, any> || {}),
-              ...(finishedSub?.chainPayload as Record<string, any> || {})
+              ...(instance.chainPayload || {}),
+              ...(finishedSub?.chainPayload || {})
             }
           }
         });
@@ -92,9 +95,9 @@ export class Executor {
       return subRes;
     }
 
-    const bizKey = sInstance.step.bizKey; 
+    const bizKey = sInstance.step.bizKey;
     let input = (instance.chainPayload as Record<string, any>) || {};
-    
+
     if (instance.parentStepInstanceId) {
       const parentData = await this.getAncestorsData(instanceId);
       input = { ...parentData, ...input };
@@ -136,7 +139,7 @@ export class Executor {
     }
 
     try {
-      const updateResult = await prisma.stepInstance.updateMany({
+      const updateResult: any = await db.stepInstance.updateMany({
         where: { id: sInstance.id, status: 'PENDING' },
         data: { status: 'RUNNING' }
       });
@@ -150,7 +153,7 @@ export class Executor {
       const result = await handler(input);
       const duration = Date.now() - startTime;
 
-      await prisma.stepInstance.update({
+      await db.stepInstance.update({
         where: { id: sInstance.id },
         data: { status: 'COMPLETED', payload: result as any }
       });
@@ -158,12 +161,12 @@ export class Executor {
       console.log(`<<< [STEP COMPLETED] ${bizKey || sInstance.step.name} in ${duration}ms`);
       console.log(`    Output: ${JSON.stringify(result)}`);
 
-      const updatedInstance = await prisma.chainInstance.update({
+      const updatedInstance: any = await db.chainInstance.update({
         where: { id: instanceId },
         data: {
           chainPayload: {
-            ...(instance.chainPayload as Record<string, any> || {}),
-            ...(result as Record<string, any> || {})
+            ...(instance.chainPayload || {}),
+            ...(result || {})
           },
           status: 'RUNNING'
         }
@@ -179,41 +182,16 @@ export class Executor {
   }
 
   async peekNextStep(instanceId: string): Promise<any> {
-    const instance = await prisma.chainInstance.findUnique({
-      where: { id: instanceId },
-      select: {
-        stepInstances: {
-          where: { status: 'PENDING' },
-          orderBy: { sortOrder: 'asc' },
-          take: 2,
-          select: {
-            id: true,
-            step: {
-              select: {
-                id: true,
-                bizKey: true,
-                name: true,
-                isAuto: true,
-                handlerUrl: true
-              }
-            }
-          }
-        }
-      }
-    });
-
-    const sInstance = instance?.stepInstances[0];
+    const nextSteps: any[] = await db_getPendingStep(instanceId);
+    const sInstance = nextSteps[0];
     if (!sInstance) return null;
 
-    const subChainInstance = await prisma.chainInstance.findFirst({
-      where: { parentStepInstanceId: sInstance.id },
-      select: { id: true, status: true }
-    });
+    const subChainInstance: any = await db_getSubChain(sInstance.id);
 
     if (subChainInstance && subChainInstance.status !== 'COMPLETED') {
       const nextSubStep = await this.peekNextStep(subChainInstance.id);
       if (!nextSubStep) {
-        return instance?.stepInstances[1]?.step || null;
+        return nextSteps[1]?.step || null;
       }
       return nextSubStep;
     }
@@ -222,16 +200,13 @@ export class Executor {
   }
 
   private async getAncestorsData(instanceId: string): Promise<Record<string, any>> {
-    const instance = await prisma.chainInstance.findUnique({
-      where: { id: instanceId },
-      select: { parentStepInstanceId: true, chainPayload: true }
-    });
+    const instance: any = await db_getInstance(instanceId);
     if (!instance) return {};
 
     let currentData = (instance.chainPayload as Record<string, any>) || {};
 
     if (instance.parentStepInstanceId) {
-      const parentStep = await prisma.stepInstance.findUnique({
+      const parentStep: any = await db.stepInstance.findUnique({
         where: { id: instance.parentStepInstanceId },
         select: { chainInstanceId: true }
       });
@@ -244,14 +219,11 @@ export class Executor {
   }
 
   private async getRootChainInstance(instanceId: string): Promise<any> {
-    const instance = await prisma.chainInstance.findUnique({
-      where: { id: instanceId },
-      select: { id: true, handlerUrl: true, parentStepInstanceId: true }
-    });
+    const instance: any = await db_getInstance(instanceId);
     if (!instance) throw new Error(`找不到实例: ${instanceId}`);
     if (!instance.parentStepInstanceId) return instance;
 
-    const parentStep = await prisma.stepInstance.findUnique({
+    const parentStep: any = await db.stepInstance.findUnique({
       where: { id: instance.parentStepInstanceId },
       select: { chainInstanceId: true }
     });
@@ -260,11 +232,11 @@ export class Executor {
   }
 
   private async markFailed(stepInstanceId: string, reason: string) {
-    const stepInstance = await prisma.stepInstance.update({
+    const stepInstance: any = await db.stepInstance.update({
       where: { id: stepInstanceId },
       data: { status: 'FAILED', payload: { error: reason } as any }
     });
-    await prisma.chainInstance.update({
+    await db.chainInstance.update({
       where: { id: stepInstance.chainInstanceId },
       data: { status: 'FAILED' }
     });
@@ -272,19 +244,19 @@ export class Executor {
   }
 
   private async propagateErrorToRoot(chainInstanceId: string, stepId: string, reason: string) {
-    const chainInstance = await prisma.chainInstance.findUnique({
+    const chainInstance: any = await db.chainInstance.findUnique({
       where: { id: chainInstanceId },
       select: { id: true, error: true, parentStepInstanceId: true }
     });
     if (!chainInstance) return;
     const currentErrorMap = (chainInstance.error as Record<string, string>) || {};
     currentErrorMap[stepId] = reason;
-    await prisma.chainInstance.update({
+    await db.chainInstance.update({
       where: { id: chainInstanceId },
       data: { error: currentErrorMap, status: 'FAILED' }
     });
     if (chainInstance.parentStepInstanceId) {
-      const parentStep = await prisma.stepInstance.findUnique({
+      const parentStep: any = await db.stepInstance.findUnique({
         where: { id: chainInstance.parentStepInstanceId },
         select: { chainInstanceId: true }
       });
