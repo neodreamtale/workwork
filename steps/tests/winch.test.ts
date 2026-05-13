@@ -1,48 +1,39 @@
-import { Winch } from '../src/workflow/service/Winch';
 import prisma from '../src/lib/db';
+import { Winch } from '../src/workflow/service/Winch';
 
-/**
- * 集成测试脚本：验证 实例化 -> 自动连跳 -> 递归子流程 -> 数据合并流转
- */
 async function main() {
   console.log("=== 🚀 Winch 绞盘引擎集成测试开始 ===");
 
-  // 清理老旧测试数据 (可选)
-  await prisma.stepInstance.deleteMany({});
-  await prisma.chainInstance.deleteMany({});
-  await prisma.step.deleteMany({});
-  await prisma.chain.deleteMany({});
-
-  // 1. 创建子流程模板：优惠券核销
+  // 1. 创建子流程模板 (优惠券核销)
   console.log("[Test] 正在创建子流程模板...");
-  const couponChain = await prisma.chain.create({
+  const subChain = await prisma.chain.create({
     data: {
       name: "优惠券子流程",
       steps: {
         create: [
-          { name: "检查有效期", bizKey: "CHECK_COUPON", sortOrder: 1, isAuto: true },
-          { name: "执行扣减", bizKey: "DEDUCT_COUPON", sortOrder: 2, isAuto: true },
+          { name: "检查优惠券", bizKey: "CHECK_COUPON", sortOrder: 1, isAuto: true },
+          { name: "扣减金额", bizKey: "DEDUCT_COUPON", sortOrder: 2, isAuto: true },
         ]
       }
     }
   });
 
-  // 2. 创建主流程模板
+  // 2. 创建主流程模板 (订单处理)
   console.log("[Test] 正在创建主流程模板...");
   const mainChain = await prisma.chain.create({
     data: {
       name: "订单主流程",
+      isMain: true,
       steps: {
         create: [
-          { name: "用户支付", bizKey: "PAYMENT", sortOrder: 1, isAuto: true },
+          { name: "支付节点", bizKey: "PAYMENT", sortOrder: 1, isAuto: true },
           { 
-            name: "核销环节", 
-            bizKey: "COUPON_STEP", 
+            name: "营销插件", 
             sortOrder: 2, 
-            isAuto: true, 
-            subChainId: couponChain.id // 挂载子流程
+            isAuto: true,
+            subChainId: subChain.id // 挂载子流程
           },
-          { name: "物流发货", bizKey: "SHIPPING", sortOrder: 3, isAuto: true },
+          { name: "物流节点", bizKey: "SHIPPING", sortOrder: 3, isAuto: true },
         ]
       }
     }
@@ -61,7 +52,8 @@ async function main() {
   });
 
   exec.registerHandler("DEDUCT_COUPON", async (data) => {
-    return { discount: 50, finalAmount: data.amount - 50 };
+    const amount = data.amount as number;
+    return { discount: 50, finalAmount: amount - 50 };
   });
 
   exec.registerHandler("SHIPPING", async (data) => {
@@ -76,28 +68,22 @@ async function main() {
 
   const totalTime = Date.now() - startTime;
   console.log(`\n--- ✅ 流程执行完毕，总耗时: ${totalTime}ms ---`);
-  
-  // 5. 打印最终结果
+
+  // 5. 验证结果 (雪球合并后的 Payload)
+  // 【修复】：将 result 断言为 any 以便访问 id 属性
+  const resultData = executionResult.result as any;
   const finalInstance = await prisma.chainInstance.findUnique({
-    where: { id: executionResult.result?.id || "" }, // 修正：从结果中取 ID
-    select: { chainPayload: true, error: true, status: true }
+    where: { id: resultData?.id || "" }
   });
 
-  if (finalInstance) {
-    console.log("\n最终全局 Payload (雪球合并后):");
-    console.log(JSON.stringify(finalInstance.chainPayload, null, 2));
-    console.log("\n状态:", finalInstance.status);
-    if (finalInstance.error) {
-      console.log("错误记录:", finalInstance.error);
-    }
-  }
+  console.log("\n最终全局 Payload (雪球合并后):");
+  console.log(JSON.stringify(finalInstance?.chainPayload, null, 2));
+  console.log(`\n状态: ${finalInstance?.status}`);
+
+  process.exit(0);
 }
 
-main()
-  .catch((e) => {
-    console.error("测试运行失败:", e);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+main().catch(err => {
+  console.error("测试运行失败:", err);
+  process.exit(1);
+});

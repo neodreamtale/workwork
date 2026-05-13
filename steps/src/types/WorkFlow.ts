@@ -1,4 +1,9 @@
 /**
+ * 符合 JSON 规范的递归类型，确保数据可序列化存储
+ */
+export type JsonValue = string | number | boolean | null | { [key: string]: JsonValue } | JsonValue[];
+
+/**
  * 基础模板步骤类型
  */
 export type WorkflowStep = {
@@ -9,6 +14,9 @@ export type WorkflowStep = {
   isAuto: boolean;
   handlerUrl: string | null;
   subChainId: string | null;
+  subChain?: WorkflowChain | null; // 【新增】允许携带嵌套的子流程对象
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 /**
@@ -18,7 +26,11 @@ export type WorkflowChain = {
   id: string;
   name: string | null;
   description: string | null;
+  isMain?: boolean;
+  chainLength?: number;
   steps: WorkflowStep[];
+  createdAt?: any;
+  updatedAt?: any;
 };
 
 /**
@@ -28,7 +40,7 @@ export type InstanceStep = {
   id: string;
   stepId: string;
   status: 'PENDING' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'READY' | 'SKIPPED';
-  payload?: any;
+  payload?: JsonValue;
   sortOrder: number;
   step: {
     id: string;
@@ -47,7 +59,7 @@ export type InstanceChain = {
   templateId: string;
   status: string;
   handlerUrl: string | null;
-  chainPayload: any;
+  chainPayload: JsonValue;
   parentStepInstanceId: string | null;
   stepInstances?: InstanceStep[];
 };

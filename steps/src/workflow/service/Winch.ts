@@ -2,7 +2,7 @@ import prisma from '../../lib/db';
 import { Executor } from '../engine/Executor';
 import { AutoRunner } from '../runner/AutoRunner';
 import { ManualRunner } from '../runner/ManualRunner';
-import { InstanceChain, WorkflowStep } from '../../types/WorkFlow';
+import { InstanceChain, WorkflowStep, JsonValue } from '../../types/WorkFlow';
 
 export type RunMode = 'AUTO' | 'MANUAL';
 
@@ -34,7 +34,7 @@ export class Winch {
   /**
    * 绞盘转动：实例化并启动一个流程
    */
-  async start(chainId: string, initialData: any = {}, mode: RunMode = 'AUTO') {
+  async start(chainId: string, initialData: JsonValue = {}, mode: RunMode = 'AUTO') {
     console.log(`[Winch] 正在启动链条 ${chainId}, 模式: ${mode}`);
     const instance = await this.createInstance(chainId, initialData);
     return this.resume(instance.id, mode);
@@ -76,8 +76,7 @@ export class Winch {
   /**
    * 将一个 Chain 模板实例化 (内部逻辑)
    */
-  private async createInstance(chainId: string, initialData: any = {}, parentStepInstanceId?: string): Promise<InstanceChain> {
-    // 拆分查询以防止类型深度报错，并手动指定返回类型
+  private async createInstance(chainId: string, initialData: JsonValue = {}, parentStepInstanceId?: string): Promise<InstanceChain> {
     const template: any = await db.chain.findUnique({
       where: { id: chainId },
       select: { id: true }
