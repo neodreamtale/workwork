@@ -18,7 +18,7 @@ export interface ExecutionResult {
 
 /**
  * 工作流执行内核
- * 专注于单步执行的原子性、远程调用、状态更新与错误冒泡
+ * 支持递归钻取 (Drill-down) 执行子流程
  */
 export class Executor {
   private handlers: Record<string, StepHandler> = {};
@@ -31,10 +31,11 @@ export class Executor {
   }
 
   /**
-   * 原子执行方法：只执行指定实例当前的“第一个”待处理步骤
+   * 执行指定实例及其层级下当前的“第一个”待处理原子步骤
+   * 实现深度优先的递归调度
    */
   async executeNext(instanceId: string): Promise<ExecutionResult> {
-    // 1. 获取当前实例及第一个待执行的步骤
+    // 1. 获取当前层级的实例及第一个待执行的步骤
     const instance = await prisma.chainInstance.findUnique({
       where: { id: instanceId },
       include: {
@@ -49,7 +50,7 @@ export class Executor {
 
     if (!instance) throw new Error(`找不到实例: ${instanceId}`);
 
-    // 如果没有 PENDING 步骤了，标记整个流程完成
+    // 如果当前层级没有 PENDING 步骤了，标记当前层级完成
     if (instance.stepInstances.length === 0) {
       await prisma.chainInstance.update({
         where: { id: instanceId },
@@ -59,17 +60,44 @@ export class Executor {
     }
 
     const sInstance = instance.stepInstances[0];
-    const bizKey = sInstance.step.bizKey;
+
+    // ---------------------------------------------------------
+    // 核心逻辑：检查是否存在子流程实例挂载在此步骤上
+    // ---------------------------------------------------------
+    const subChainInstance = await prisma.chainInstance.findFirst({
+      where: { parentStepInstanceId: sInstance.id }
+    });
+
+    // 如果有子流程且没跑完，绞盘向下钻取
+    if (subChainInstance && subChainInstance.status !== 'COMPLETED') {
+      console.log(`[Executor] 发现子流程实例 ${subChainInstance.id}, 正在向下钻取...`);
+      const subRes = await this.executeNext(subChainInstance.id);
+      
+      // 如果子流程刚刚跑完最后一步
+      if (subRes.status === 'FINISHED') {
+        console.log(`[Executor] 子流程 ${subChainInstance.id} 执行完毕，回归父层级。`);
+        // 标记父层级的这个复合步骤为完成
+        await prisma.stepInstance.update({
+          where: { id: sInstance.id },
+          data: { status: 'COMPLETED' }
+        });
+        // 尾递归：继续跑父层级的下一步
+        return this.executeNext(instanceId);
+      }
+      return subRes;
+    }
+
+    // ---------------------------------------------------------
+    // 原子执行逻辑：如果没有子流程，则执行当前步骤的 Handler
+    // ---------------------------------------------------------
+    const bizKey = sInstance.step.bizKey; 
     const input = (instance.chainPayload as Record<string, any>) || {};
 
     let handler: StepHandler | undefined;
-
-    // A. 寻找本地处理器
     if (bizKey) {
       handler = this.handlers[bizKey];
     }
 
-    // B. 构建远程回调处理器
     if (!handler) {
       const rootInstance = await this.getRootChainInstance(instanceId);
       const effectiveUrl = sInstance.step.handlerUrl || instance.handlerUrl || rootInstance.handlerUrl;
@@ -90,11 +118,9 @@ export class Executor {
               }
             })
           });
-
           if (!response.ok) {
             throw new Error(`远程调用失败(${response.status}): ${await response.text()}`);
           }
-
           const responseData = await response.json();
           return responseData.data || responseData;
         };
@@ -103,30 +129,30 @@ export class Executor {
 
     if (!handler) {
       const stepIdentifier = bizKey || sInstance.step.name || sInstance.stepId;
-      const reason = `未找到处理器: [${stepIdentifier}] (本地未注册且无有效回调地址)`;
+      const reason = `未找到处理器: [${stepIdentifier}] (无本地 Handler 且无有效远程 URL)`;
       await this.markFailed(sInstance.id, reason);
       return { status: 'NO_HANDLER', reason };
     }
 
-    // 3. 开始执行
     try {
-      await prisma.stepInstance.update({
-        where: { id: sInstance.id },
+      // 原子抢占锁
+      const updateResult = await prisma.stepInstance.updateMany({
+        where: { id: sInstance.id, status: 'PENDING' },
         data: { status: 'RUNNING' }
       });
 
+      if (updateResult.count === 0) {
+        return { status: 'FAILED', reason: '任务已被抢占' };
+      }
+
       const result = await handler(input);
 
-      // 4. 执行成功：更新步骤状态并同步结果到全局负载 (数据流转)
+      // 执行成功：更新状态并同步数据流 (雪球合并)
       await prisma.stepInstance.update({
         where: { id: sInstance.id },
-        data: {
-          status: 'COMPLETED',
-          payload: result as any
-        }
+        data: { status: 'COMPLETED', payload: result as any }
       });
 
-      // 将结果合并到 ChainInstance 的全局负载中，实现“雪球式”数据流转
       await prisma.chainInstance.update({
         where: { id: instanceId },
         data: {
@@ -134,7 +160,7 @@ export class Executor {
             ...(instance.chainPayload as Record<string, any> || {}),
             ...(result as Record<string, any> || {})
           },
-          status: 'RUNNING' // 只要跑过一步，状态就是 RUNNING
+          status: 'RUNNING'
         }
       });
 
@@ -148,9 +174,9 @@ export class Executor {
   }
 
   /**
-   * 预检下一步的配置（供 Runner 使用）
+   * 预检下一步的配置：支持递归钻取，确保看到的是当前真正待执行的原子步骤
    */
-  async peekNextStep(instanceId: string) {
+  async peekNextStep(instanceId: string): Promise<any> {
     const instance = await prisma.chainInstance.findUnique({
       where: { id: instanceId },
       include: {
@@ -162,7 +188,21 @@ export class Executor {
         }
       }
     });
-    return instance?.stepInstances[0]?.step;
+
+    const sInstance = instance?.stepInstances[0];
+    if (!sInstance) return null;
+
+    // 检查是否存在挂载在此步骤上的子流程实例
+    const subChainInstance = await prisma.chainInstance.findFirst({
+      where: { parentStepInstanceId: sInstance.id }
+    });
+
+    // 如果有子流程且没跑完，向下钻取预检
+    if (subChainInstance && subChainInstance.status !== 'COMPLETED') {
+      return this.peekNextStep(subChainInstance.id);
+    }
+
+    return sInstance.step;
   }
 
   /**
@@ -180,7 +220,6 @@ export class Executor {
       where: { id: instance.parentStepInstanceId },
       select: { chainInstanceId: true }
     });
-
     if (!parentStep) return instance;
     return this.getRootChainInstance(parentStep.chainInstanceId);
   }
@@ -188,10 +227,7 @@ export class Executor {
   private async markFailed(stepInstanceId: string, reason: string) {
     const stepInstance = await prisma.stepInstance.update({
       where: { id: stepInstanceId },
-      data: {
-        status: 'FAILED',
-        payload: { error: reason } as any
-      }
+      data: { status: 'FAILED', payload: { error: reason } as any }
     });
 
     await prisma.chainInstance.update({
@@ -207,7 +243,6 @@ export class Executor {
       where: { id: chainInstanceId },
       select: { id: true, error: true, parentStepInstanceId: true }
     });
-
     if (!chainInstance) return;
 
     const currentErrorMap = (chainInstance.error as Record<string, string>) || {};
@@ -215,10 +250,7 @@ export class Executor {
 
     await prisma.chainInstance.update({
       where: { id: chainInstanceId },
-      data: {
-        error: currentErrorMap,
-        status: 'FAILED'
-      }
+      data: { error: currentErrorMap, status: 'FAILED' }
     });
 
     if (chainInstance.parentStepInstanceId) {
@@ -226,7 +258,6 @@ export class Executor {
         where: { id: chainInstance.parentStepInstanceId },
         select: { chainInstanceId: true }
       });
-
       if (parentStep) {
         await this.propagateErrorToRoot(parentStep.chainInstanceId, stepId, reason);
       }

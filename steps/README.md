@@ -1,6 +1,8 @@
-# Steps Workflow Engine
+# Winch Workflow Engine (绞盘)
 
-这是一个基于 Prisma 和 TypeScript 构建的高性能工作流执行引擎，专为复杂的业务流程编排而设计。
+这是一个基于 Prisma 和 TypeScript 构建的高性能工作流执行引擎。
+
+**Winch (绞盘)** 这一命名源于农场机械：它作为动力核心，负责拉动 **Chain (链条)** 上的每一个 **Step (环节)** 稳步向前。
 
 ## 核心设计理念
 
@@ -11,12 +13,41 @@
 
 ---
 
-## 业务主键 (BizKey)
+## 快速开始：使用 Winch 驱动流程
 
-为了方便开发人员维护，引擎不要求你记住数据库的随机 ID。你可以在定义 `Step` 模板时，为其指定一个 `bizKey`（例如 `USER_AUTH` 或 `SHIP_GOODS`）。
+程序员唯一需要打交道的类就是 `Winch`。
 
-- **本地注册**：使用 `executor.registerHandler("BIZ_KEY", ...)`。
-- **远程路由**：远程接口接收到的 `context` 中会包含这个 `bizKey`，方便你做后端路由。
+### 1. 初始化与逻辑注册
+```typescript
+import { Winch } from './workflow/service/Winch';
+
+const winch = new Winch();
+
+// 基于语义化的 bizKey 注册本地处理器
+winch.getExecutor().registerHandler("CALC_TAX", async (input) => {
+  return { ...input, tax: input.amount * 0.1 };
+});
+```
+
+### 2. 启动流程 (start)
+一键完成“实例化”和“首次拉动”。
+```typescript
+// initialData 会作为初始负载进入流程，并随步骤流转合并
+await winch.start("TEMPLATE_ID", { amount: 1000 }, "AUTO");
+```
+
+### 3. 恢复流程 (resume)
+用于处理人工审批后的继续触发，或者单步调试。
+```typescript
+// MANUAL 模式表示只拉动一步即停止
+await winch.resume("INSTANCE_ID", "MANUAL");
+```
+
+### 4. 批量维护 (resumeAllActive)
+用于系统重启后的任务恢复，或者作为定时任务的兜底。
+```typescript
+await winch.resumeAllActive("AUTO");
+```
 
 ---
 
@@ -24,54 +55,26 @@
 
 ### 1. 回调地址发现逻辑 (Fallback Mechanism)
 
-当引擎执行一个步骤时，会按照以下优先级寻找处理器：
-
-1.  **本地处理器**：通过 `executor.registerHandler(bizKey, handler)` 注册的函数。
-2.  **步骤级 URL**：该 `Step` 节点上配置的 `handlerUrl`。
-3.  **当前流程 URL**：该 `ChainInstance` 上配置的 `handlerUrl`。
-4.  **根流程 URL**：递归向上寻找最顶层工作流实例配置的 `handlerUrl`。
+当 Winch 拉动一个步骤时，会按此优先级寻找动力：
+1. 本地处理器 -> 2. 步骤级 URL -> 3. 链级 URL -> 4. 根链级 URL。
 
 ### 2. 请求格式 (Request Body)
-
 ```json
 {
   "payload": { ... },
   "context": {
-    "bizKey": "CALC_TAX",       // 业务主键
-    "stepId": "01J7...",       // 步骤模板 ID (物理 ID)
-    "stepName": "计算税率",      // 步骤名称
-    "instanceId": "01K9...",    // 当前实例 ID
-    "rootInstanceId": "01M2..."  // 根实例 ID
+    "bizKey": "CALC_TAX",
+    "stepId": "01J7...",
+    "instanceId": "01K9...",
+    "rootInstanceId": "01M2..."
   }
 }
 ```
 
 ### 3. 响应格式 (Response Body)
-
 ```json
 {
   "status": "success",
-  "data": {
-    "result": 100
-  }
+  "data": { "result": 100 }
 }
-```
-
----
-
-## 快速开始
-
-### 注册处理器
-```typescript
-const executor = new Executor();
-// 基于语义化的 bizKey 注册，无需关心数据库 ID
-executor.registerHandler("CALC_TAX", async (input) => {
-  const tax = input.amount * 0.1;
-  return { ...input, tax };
-});
-```
-
-### 触发执行
-```typescript
-await executor.executeNext("CHAIN_INSTANCE_ID");
 ```
