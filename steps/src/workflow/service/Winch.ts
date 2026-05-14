@@ -1,5 +1,5 @@
 import prisma from '../../lib/db';
-import { Executor } from '../engine/Executor';
+import { Executor, ExecutionResult } from '../engine/Executor';
 import { AutoRunner } from '../runner/AutoRunner';
 import { ManualRunner } from '../runner/ManualRunner';
 import { InstanceChain, WorkflowStep, JsonValue } from '../../types/WorkFlow';
@@ -11,7 +11,6 @@ const db = prisma as any;
 
 /**
  * Winch (绞盘)：工作流引擎的调度中心与门面
- * 负责拉动工作流链条 (Chain) 的转动。
  */
 export class Winch {
   private executor: Executor;
@@ -24,26 +23,27 @@ export class Winch {
     this.manualRunner = new ManualRunner(this.executor);
   }
 
-  /**
-   * 暴露 Executor 实例，方便外部注册本地 Handler
-   */
   getExecutor() {
     return this.executor;
   }
 
   /**
-   * 绞盘转动：实例化并启动一个流程
+   * 启动流程：返回执行结果 + 实例信息
    */
   async start(chainId: string, initialData: JsonValue = {}, mode: RunMode = 'AUTO') {
     console.log(`[Winch] 正在启动链条 ${chainId}, 模式: ${mode}`);
     const instance = await this.createInstance(chainId, initialData);
-    return this.resume(instance.id, mode);
+    const executionResult = await this.resume(instance.id, mode);
+    
+    // 返回一个包含实例信息的复合对象
+    return {
+      ...executionResult,
+      instanceId: instance.id,
+      instance
+    };
   }
 
-  /**
-   * 绞盘恢复：继续拉动一个现有的流程实例
-   */
-  async resume(instanceId: string, mode: RunMode = 'AUTO') {
+  async resume(instanceId: string, mode: RunMode = 'AUTO'): Promise<ExecutionResult> {
     if (mode === 'AUTO') {
       return this.autoRunner.run(instanceId);
     } else {
@@ -51,18 +51,11 @@ export class Winch {
     }
   }
 
-  /**
-   * 绞盘清扫：批量恢复所有处于活跃状态的任务
-   */
   async resumeAllActive(mode: RunMode = 'AUTO') {
     const activeInstances: any[] = await db.chainInstance.findMany({
-      where: { 
-        status: { in: ['PENDING', 'RUNNING'] } 
-      },
+      where: { status: { in: ['PENDING', 'RUNNING'] } },
       select: { id: true }
     });
-
-    console.log(`[Winch] 绞盘正在尝试拉动 ${activeInstances.length} 条活跃链条...`);
     
     for (const instance of activeInstances) {
       try {
@@ -73,15 +66,11 @@ export class Winch {
     }
   }
 
-  /**
-   * 将一个 Chain 模板实例化 (内部逻辑)
-   */
   private async createInstance(chainId: string, initialData: JsonValue = {}, parentStepInstanceId?: string): Promise<InstanceChain> {
     const template: any = await db.chain.findUnique({
       where: { id: chainId },
       select: { id: true }
     });
-
     if (!template) throw new Error(`找不到工作流模板: ${chainId}`);
 
     const steps: WorkflowStep[] = await db.step.findMany({
@@ -109,12 +98,10 @@ export class Winch {
           status: 'PENDING'
         }
       });
-
       if (step.subChainId) {
         await this.createInstance(step.subChainId, initialData, sInstanceData.id);
       }
     }
-
     return instance;
   }
 }
