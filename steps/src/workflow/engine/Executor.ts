@@ -119,6 +119,8 @@ export class Executor {
     if (stepIns.status === 'PENDING') {
       console.log(`\n>>> [进入子流程] ${stepIns.step.name || stepIns.step.bizKey} (实例: ${subChain.id})`);
       await db.stepInstance.update({ where: { id: stepIns.id }, data: { status: 'RUNNING' } });
+    } else {
+      console.log(`  [递归驱动] 正在深入子流程: ${stepIns.step.name || stepIns.step.bizKey}`);
     }
     const subRes = await this.executeNext(subChain.id);
     if (subRes.status === 'FINISHED') {
